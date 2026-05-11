@@ -200,9 +200,10 @@ const ChatArea = ({ onOpenModelInfo }) => {
 
   if (!activeChatId || !activeContact) {
     return (
-      <div className="flex-grow flex flex-col h-full bg-[var(--tg-chat-bg)] relative">
+      <div className="flex-grow flex flex-col h-full bg-[var(--tg-chat-bg)] relative overflow-hidden">
         <div className="h-[60px] w-full bg-[var(--tg-bg-color)] border-b border-[var(--tg-border-color)] flex-shrink-0 z-10"></div>
         <div className="flex-grow flex items-center justify-center relative">
+          <div className="absolute inset-0 bg-cover bg-center bg-no-repeat" style={{ backgroundImage: 'var(--tg-chat-bg-image)' }}></div>
           <div className="absolute inset-0 opacity-[0.05] pointer-events-none" style={{ backgroundImage: 'url("https://web.telegram.org/a/chat-bg-pattern-light.png")', backgroundSize: '400px' }}></div>
           <div className="bg-[var(--tg-bg-color)] px-4 py-1.5 rounded-full text-sm text-[var(--tg-hint-color)] shadow-sm z-10">
             Select a chat to start messaging
@@ -213,7 +214,8 @@ const ChatArea = ({ onOpenModelInfo }) => {
   }
 
   return (
-    <div className="flex-grow flex flex-col h-full bg-[var(--tg-chat-bg)] relative">
+    <div className="flex-grow flex flex-col h-full bg-[var(--tg-chat-bg)] relative overflow-hidden">
+      <div className="absolute inset-0 bg-cover bg-center bg-no-repeat" style={{ backgroundImage: 'var(--tg-chat-bg-image)' }}></div>
       <div className="absolute inset-0 opacity-[0.05] pointer-events-none" style={{ backgroundImage: 'url("https://web.telegram.org/a/chat-bg-pattern-light.png")', backgroundSize: '400px' }}></div>
       
       {/* Header */}

@@ -25,6 +25,7 @@
     
     --tg-border-color: #dfe1e5;
     --tg-status-color: rgb(170, 170, 170);
+    --tg-chat-bg-image: url('/assets/backgrounds/chat_bg_light.png');
   }
   
   .dark {
@@ -49,6 +50,7 @@
     
     --tg-border-color: #0f0f0f;
     --tg-status-color: #aaaaaa;
+    --tg-chat-bg-image: url('/assets/backgrounds/chat_bg_dark.png');
   }
 }
 
