@@ -14,7 +14,7 @@ const Sidebar = ({ onOpenSettings, onOpenNewContact, onOpenUserProfile }) => {
 
   return (
     <div className="w-full md:w-[320px] lg:w-[380px] bg-[var(--tg-sidebar-bg)] md:border-r border-[var(--tg-border-color)] flex flex-col h-full z-10 relative shadow-sm flex-shrink-0">
-      <div className="flex items-center px-4 py-2 border-b border-[var(--tg-border-color)] h-[56px]">
+      <div className="flex items-center px-2 md:px-4 border-b border-[var(--tg-border-color)] h-[60px] flex-shrink-0 bg-[var(--tg-bg-color)]">
         <button 
           onClick={onOpenSettings}
           className="p-2 mr-2 text-[var(--tg-hint-color)] hover:bg-[var(--tg-sidebar-hover)] rounded-full transition-colors"
@@ -39,9 +39,9 @@ const Sidebar = ({ onOpenSettings, onOpenNewContact, onOpenUserProfile }) => {
       {activeUser && (
         <div 
           onClick={onOpenUserProfile}
-          className="flex items-center px-4 py-3 border-b border-[var(--tg-border-color)] bg-[var(--tg-secondary-bg-color)] cursor-pointer hover:bg-[var(--tg-sidebar-hover)] transition-colors"
+          className="flex items-center px-4 py-3 border-b border-[var(--tg-border-color)] bg-[var(--tg-secondary-bg-color)] cursor-pointer hover:bg-[var(--tg-sidebar-hover)] transition-all duration-200"
         >
-          <div className="w-10 h-10 rounded-full overflow-hidden bg-gradient-to-br from-purple-400 to-purple-600 flex-shrink-0 flex items-center justify-center text-white font-semibold text-lg mr-3 shadow-sm">
+          <div className="w-[42px] h-[42px] rounded-full overflow-hidden bg-gradient-to-br from-purple-400 to-purple-600 flex-shrink-0 flex items-center justify-center text-white font-semibold text-lg mr-3 shadow-sm border border-white/10">
             {activeUser.avatar ? (
               <img src={activeUser.avatar} className="w-full h-full object-cover" />
             ) : (
@@ -49,13 +49,13 @@ const Sidebar = ({ onOpenSettings, onOpenNewContact, onOpenUserProfile }) => {
             )}
           </div>
           <div className="flex-grow min-w-0">
-            <h3 className="font-medium truncate text-[14px]">{activeUser.name}</h3>
-            <p className="text-[12px] text-[var(--tg-link-color)] truncate">My Persona</p>
+            <h3 className="font-semibold truncate text-[15px]">{activeUser.name}</h3>
+            <p className="text-[13px] text-[var(--tg-link-color)] font-medium">My Persona</p>
           </div>
         </div>
       )}
 
-      <div className="flex-grow overflow-y-auto">
+      <div className="flex-grow overflow-y-auto px-2 py-1">
         {filteredContacts.map(contact => {
           const chatData = messages[contact.id];
           let lastMessage = null;
@@ -75,13 +75,13 @@ const Sidebar = ({ onOpenSettings, onOpenNewContact, onOpenUserProfile }) => {
             <div
               key={contact.id}
               onClick={() => setActiveChatId(contact.id)}
-              className={`flex items-center px-3 py-2 cursor-pointer transition-colors m-1 rounded-lg ${
+              className={`flex items-center px-3 py-[10px] cursor-pointer transition-all duration-200 mb-1 rounded-[10px] ${
                 isActive 
                   ? 'bg-[var(--tg-sidebar-active)] text-[var(--tg-sidebar-active-text)]' 
                   : 'hover:bg-[var(--tg-sidebar-hover)] text-[var(--tg-text-color)]'
               }`}
             >
-              <div className="w-12 h-12 rounded-full overflow-hidden bg-gradient-to-br from-blue-400 to-blue-600 flex-shrink-0 flex items-center justify-center text-white font-semibold text-lg mr-3">
+              <div className="w-[54px] h-[54px] rounded-full overflow-hidden bg-gradient-to-br from-blue-400 to-blue-600 flex-shrink-0 flex items-center justify-center text-white font-semibold text-xl mr-3 shadow-sm">
                 {contact.avatar ? (
                   <img src={contact.avatar} className="w-full h-full object-cover" />
                 ) : (
@@ -90,14 +90,14 @@ const Sidebar = ({ onOpenSettings, onOpenNewContact, onOpenUserProfile }) => {
               </div>
               <div className="flex-grow min-w-0 flex flex-col justify-center h-full">
                 <div className="flex justify-between items-baseline mb-0.5">
-                  <h3 className="font-medium truncate text-[15px]">{contact.name}</h3>
+                  <h3 className="font-semibold truncate text-[16px]">{contact.name}</h3>
                   {lastMessage && (
-                    <span className={`text-xs ml-2 flex-shrink-0 ${isActive ? 'text-white/80' : 'text-[var(--tg-hint-color)]'}`}>
+                    <span className={`text-[12px] ml-2 flex-shrink-0 ${isActive ? 'text-white/80' : 'text-[var(--tg-hint-color)]'}`}>
                       {new Date(lastMessage.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
                     </span>
                   )}
                 </div>
-                <p className={`text-[14px] truncate ${isActive ? 'text-white/90' : 'text-[var(--tg-hint-color)]'}`}>
+                <p className={`text-[15px] truncate ${isActive ? 'text-white/90' : 'text-[var(--tg-hint-color)]'}`}>
                   {lastMessage ? lastMessage.content : 'No messages yet'}
                 </p>
               </div>
@@ -108,9 +108,9 @@ const Sidebar = ({ onOpenSettings, onOpenNewContact, onOpenUserProfile }) => {
 
       <button
         onClick={onOpenNewContact}
-        className="absolute bottom-6 right-6 w-14 h-14 bg-[var(--tg-button-color)] rounded-full flex items-center justify-center text-[var(--tg-button-text-color)] shadow-lg hover:shadow-xl transition-shadow"
+        className="absolute bottom-6 right-6 w-14 h-14 bg-[var(--tg-button-color)] rounded-full flex items-center justify-center text-[var(--tg-button-text-color)] shadow-lg hover:scale-105 transition-transform active:scale-95"
       >
-        <Edit size={24} fill="currentColor" />
+        <Edit size={24} />
       </button>
     </div>
   );

@@ -9,6 +9,7 @@ const ChatArea = ({ onOpenModelInfo }) => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [editingMessageId, setEditingMessageId] = useState(null);
   const [editingText, setEditingText] = useState('');
+  const [statusOverride, setStatusOverride] = useState(null);
   const messagesEndRef = useRef(null);
 
   const activeContact = contacts.find(c => c.id === activeChatId);
@@ -110,6 +111,14 @@ const ChatArea = ({ onOpenModelInfo }) => {
       }
       setStreamingText('');
       setStreamingParentId(null);
+
+      // Transition to 'online' status for a few seconds
+      if (!aborted && botResponseText) {
+        setStatusOverride('online');
+        setTimeout(() => {
+          setStatusOverride(null);
+        }, 4000);
+      }
     }
   };
 
@@ -191,10 +200,13 @@ const ChatArea = ({ onOpenModelInfo }) => {
 
   if (!activeChatId || !activeContact) {
     return (
-      <div className="flex-grow flex items-center justify-center bg-[var(--tg-chat-bg)] relative">
-        <div className="absolute inset-0 opacity-[0.05] pointer-events-none" style={{ backgroundImage: 'url("https://web.telegram.org/a/chat-bg-pattern-light.png")', backgroundSize: '400px' }}></div>
-        <div className="bg-[var(--tg-bg-color)] px-4 py-1.5 rounded-full text-sm text-[var(--tg-hint-color)] shadow-sm z-10">
-          Select a chat to start messaging
+      <div className="flex-grow flex flex-col h-full bg-[var(--tg-chat-bg)] relative">
+        <div className="h-[60px] w-full bg-[var(--tg-bg-color)] border-b border-[var(--tg-border-color)] flex-shrink-0 z-10"></div>
+        <div className="flex-grow flex items-center justify-center relative">
+          <div className="absolute inset-0 opacity-[0.05] pointer-events-none" style={{ backgroundImage: 'url("https://web.telegram.org/a/chat-bg-pattern-light.png")', backgroundSize: '400px' }}></div>
+          <div className="bg-[var(--tg-bg-color)] px-4 py-1.5 rounded-full text-sm text-[var(--tg-hint-color)] shadow-sm z-10">
+            Select a chat to start messaging
+          </div>
         </div>
       </div>
     );
@@ -205,15 +217,15 @@ const ChatArea = ({ onOpenModelInfo }) => {
       <div className="absolute inset-0 opacity-[0.05] pointer-events-none" style={{ backgroundImage: 'url("https://web.telegram.org/a/chat-bg-pattern-light.png")', backgroundSize: '400px' }}></div>
       
       {/* Header */}
-      <div className="h-[56px] bg-[var(--tg-bg-color)] border-b border-[var(--tg-border-color)] flex items-center px-2 md:px-4 z-10 shadow-sm transition-colors">
+      <div className="h-[60px] flex-shrink-0 bg-[var(--tg-bg-color)] border-b border-[var(--tg-border-color)] flex items-center px-2 md:px-4 z-10 transition-colors shadow-sm">
         <button 
           onClick={() => setActiveChatId(null)}
-          className="md:hidden p-2 mr-1 text-[var(--tg-link-color)] hover:bg-[var(--tg-secondary-bg-color)] rounded-full transition-colors"
+          className="md:hidden p-2 mr-1 text-[var(--tg-hint-color)] hover:bg-[var(--tg-secondary-bg-color)] rounded-full transition-colors"
         >
           <ArrowLeft size={24} />
         </button>
-        <div className="flex-grow flex items-center cursor-pointer hover:opacity-80 transition-opacity overflow-hidden" onClick={onOpenModelInfo}>
-          <div className="w-10 h-10 rounded-full overflow-hidden bg-gradient-to-br from-blue-400 to-blue-600 flex-shrink-0 flex items-center justify-center text-white font-semibold text-sm mr-3">
+        <div className="flex-grow flex items-center cursor-pointer overflow-hidden p-1 rounded-lg" onClick={onOpenModelInfo}>
+          <div className="w-10 h-10 rounded-full overflow-hidden bg-gradient-to-br from-blue-400 to-blue-600 flex-shrink-0 flex items-center justify-center text-white font-semibold text-lg mr-3 shadow-sm">
             {activeContact.avatar ? (
               <img src={activeContact.avatar} className="w-full h-full object-cover" />
             ) : (
@@ -222,14 +234,17 @@ const ChatArea = ({ onOpenModelInfo }) => {
           </div>
           <div className="flex flex-col flex-grow">
             <h2 className="font-semibold text-[var(--tg-text-color)] text-[16px] leading-tight">{activeContact.name}</h2>
-            <span className="text-[13px] text-[var(--tg-link-color)]">
-              {displayIsGenerating ? 'typing...' : lastSeenStatus}
+            <span 
+              className="text-[13px] font-medium transition-colors duration-300" 
+              style={{ color: (displayIsGenerating || statusOverride === 'online') ? 'var(--tg-link-color)' : 'var(--tg-status-color)' }}
+            >
+              {displayIsGenerating ? 'typing...' : (statusOverride === 'online' ? 'online' : lastSeenStatus)}
             </span>
           </div>
         </div>
-        <div className="flex items-center">
+        <div className="flex items-center gap-1">
           <button 
-            className="p-2 text-red-500 hover:bg-red-500/10 rounded-full transition-colors mr-1"
+            className="p-2 text-red-500/70 hover:text-red-500 hover:bg-red-500/10 rounded-full transition-colors"
             onClick={(e) => {
               e.stopPropagation();
               if (window.confirm(`Are you sure you want to delete the chat with ${activeContact.name}?`)) {
@@ -240,14 +255,15 @@ const ChatArea = ({ onOpenModelInfo }) => {
           >
             <Trash2 size={20} />
           </button>
-          <button className="p-2 text-[var(--tg-hint-color)] hover:bg-[var(--tg-border-color)] rounded-full transition-colors">
+          <button className="p-2 text-[var(--tg-hint-color)] hover:bg-[var(--tg-secondary-bg-color)] rounded-full transition-colors">
             <MoreVertical size={20} />
           </button>
         </div>
       </div>
 
       {/* Messages */}
-      <div className="flex-grow overflow-y-auto p-4 z-10 flex flex-col space-y-4">
+      <div className="flex-grow overflow-y-auto z-10 custom-scrollbar">
+        <div className="max-w-[720px] mx-auto w-full p-4 flex flex-col space-y-2">
         {activeMessages.map((msg) => {
           const isUser = msg.sender === 'user';
           const isEditing = editingMessageId === msg.id;
@@ -282,14 +298,14 @@ const ChatArea = ({ onOpenModelInfo }) => {
                   </div>
                 </div>
               ) : (
-                <div className={`flex flex-col gap-1 w-full max-w-[75%] ${isUser ? 'items-end' : 'items-start'}`}>
+                <div className={`flex flex-col gap-1 w-full max-w-[85%] ${isUser ? 'items-end' : 'items-start'}`}>
                   {msg.content.split(/\n\s*\n/).filter(p => p.trim() !== '').map((paragraph, pIdx, arr) => (
                     <div 
                       key={pIdx}
-                      className={`rounded-2xl px-3 py-1.5 shadow-sm text-[15px] relative whitespace-pre-wrap break-words ${
+                      className={`rounded-[12px] px-3 py-1.5 shadow-sm text-[15px] relative whitespace-pre-wrap break-words ${
                         isUser 
-                          ? 'bg-[var(--tg-chat-bubble-out)] text-[var(--tg-chat-bubble-out-text)] ' + (pIdx === arr.length - 1 ? 'rounded-br-sm' : '')
-                          : 'bg-[var(--tg-chat-bubble-in)] text-[var(--tg-chat-bubble-in-text)] ' + (pIdx === arr.length - 1 ? 'rounded-bl-sm' : '')
+                          ? 'bg-[var(--tg-chat-bubble-out)] text-[var(--tg-chat-bubble-out-text)] ' + (pIdx === arr.length - 1 ? 'rounded-br-[4px]' : '')
+                          : 'bg-[var(--tg-chat-bubble-in)] text-[var(--tg-chat-bubble-in-text)] ' + (pIdx === arr.length - 1 ? 'rounded-bl-[4px]' : '')
                       }`}
                     >
                       {paragraph}
@@ -365,12 +381,12 @@ const ChatArea = ({ onOpenModelInfo }) => {
         })}
         
         {displayIsGenerating && displayStreamingText && (
-          <div className="flex flex-col gap-1 w-full max-w-[75%] items-start self-start group">
+          <div className="flex flex-col gap-1 w-full max-w-[85%] items-start self-start group">
             {displayStreamingText.split(/\n\s*\n/).map((paragraph, pIdx, arr) => (
               <div 
                 key={pIdx}
-                className={`rounded-2xl px-3 py-1.5 shadow-sm text-[15px] bg-[var(--tg-chat-bubble-in)] text-[var(--tg-chat-bubble-in-text)] relative whitespace-pre-wrap break-words ${
-                  pIdx === arr.length - 1 ? 'rounded-bl-sm' : ''
+                className={`rounded-[12px] px-3 py-1.5 shadow-sm text-[15px] bg-[var(--tg-chat-bubble-in)] text-[var(--tg-chat-bubble-in-text)] relative whitespace-pre-wrap break-words ${
+                  pIdx === arr.length - 1 ? 'rounded-bl-[4px]' : ''
                 }`}
               >
                 {paragraph}
@@ -384,18 +400,19 @@ const ChatArea = ({ onOpenModelInfo }) => {
         
         {displayIsGenerating && !displayStreamingText && (
            <div className="flex justify-start">
-            <div className="max-w-[75%] rounded-2xl px-4 py-2.5 shadow-sm bg-[var(--tg-chat-bubble-in)] text-[var(--tg-chat-bubble-in-text)] rounded-bl-sm flex items-center">
+            <div className="max-w-[85%] rounded-[12px] px-4 py-2.5 shadow-sm bg-[var(--tg-chat-bubble-in)] text-[var(--tg-chat-bubble-in-text)] rounded-bl-[4px] flex items-center">
               <Loader2 size={16} className="animate-spin text-[var(--tg-link-color)] mr-2" />
               <span className="text-[14px] text-[var(--tg-hint-color)]">Thinking...</span>
             </div>
           </div>
         )}
         <div ref={messagesEndRef} />
+        </div>
       </div>
 
       {/* Input */}
-      <div className="p-3 bg-[var(--tg-bg-color)] z-10 flex items-end justify-center pb-4">
-        <div className="flex items-end w-full max-w-3xl bg-[var(--tg-bg-color)]">
+      <div className="p-2 md:p-4 bg-[var(--tg-bg-color)] z-10 flex justify-center border-t border-[var(--tg-border-color)]">
+        <div className="flex items-end w-full max-w-[720px] bg-[var(--tg-bg-color)]">
           <button className="p-3 text-[var(--tg-hint-color)] hover:text-[var(--tg-link-color)] transition-colors">
             <Paperclip size={24} />
           </button>
