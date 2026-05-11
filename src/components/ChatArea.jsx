@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { Paperclip, Send, MoreVertical, Loader2, Edit2, Trash2, RotateCcw, ChevronLeft, ChevronRight, ArrowLeft } from 'lucide-react';
+import { Paperclip, Send, MoreVertical, Loader2, Edit2, Trash2, RotateCcw, ChevronLeft, ChevronRight, ArrowLeft, CheckCheck } from 'lucide-react';
 import { generateChatResponse } from '../services/api';
 
 const ChatArea = ({ onOpenModelInfo }) => {
@@ -204,7 +204,7 @@ const ChatArea = ({ onOpenModelInfo }) => {
         <div className="h-[60px] w-full bg-[var(--tg-bg-color)] border-b border-[var(--tg-border-color)] flex-shrink-0 z-10"></div>
         <div className="flex-grow flex items-center justify-center relative">
           <div className="absolute inset-0 bg-cover bg-center bg-no-repeat" style={{ backgroundImage: 'var(--tg-chat-bg-image)' }}></div>
-          <div className="absolute inset-0 opacity-[0.05] pointer-events-none" style={{ backgroundImage: 'url("https://web.telegram.org/a/chat-bg-pattern-light.png")', backgroundSize: '400px' }}></div>
+          <div className="absolute inset-0 opacity-[0.05] pointer-events-none" style={{ backgroundSize: '400px' }}></div>
           <div className="bg-[var(--tg-bg-color)] px-4 py-1.5 rounded-full text-sm text-[var(--tg-hint-color)] shadow-sm z-10">
             Select a chat to start messaging
           </div>
@@ -216,7 +216,7 @@ const ChatArea = ({ onOpenModelInfo }) => {
   return (
     <div className="flex-grow flex flex-col h-full bg-[var(--tg-chat-bg)] relative overflow-hidden">
       <div className="absolute inset-0 bg-cover bg-center bg-no-repeat" style={{ backgroundImage: 'var(--tg-chat-bg-image)' }}></div>
-      <div className="absolute inset-0 opacity-[0.05] pointer-events-none" style={{ backgroundImage: 'url("https://web.telegram.org/a/chat-bg-pattern-light.png")', backgroundSize: '400px' }}></div>
+      <div className="absolute inset-0 opacity-[0.05] pointer-events-none" style={{ backgroundSize: '400px' }}></div>
       
       {/* Header */}
       <div className="h-[60px] flex-shrink-0 bg-[var(--tg-bg-color)] border-b border-[var(--tg-border-color)] flex items-center px-2 md:px-4 z-10 transition-colors shadow-sm">
@@ -301,23 +301,43 @@ const ChatArea = ({ onOpenModelInfo }) => {
                 </div>
               ) : (
                 <div className={`flex flex-col gap-1 w-full max-w-[85%] ${isUser ? 'items-end' : 'items-start'}`}>
-                  {msg.content.split(/\n\s*\n/).filter(p => p.trim() !== '').map((paragraph, pIdx, arr) => (
-                    <div 
-                      key={pIdx}
-                      className={`rounded-[12px] px-3 py-1.5 shadow-sm text-[15px] relative whitespace-pre-wrap break-words ${
-                        isUser 
-                          ? 'bg-[var(--tg-chat-bubble-out)] text-[var(--tg-chat-bubble-out-text)] ' + (pIdx === arr.length - 1 ? 'rounded-br-[4px]' : '')
-                          : 'bg-[var(--tg-chat-bubble-in)] text-[var(--tg-chat-bubble-in-text)] ' + (pIdx === arr.length - 1 ? 'rounded-bl-[4px]' : '')
-                      }`}
-                    >
-                      {paragraph}
-                      {pIdx === arr.length - 1 && (
-                        <div className="text-[11px] text-right mt-1 opacity-70 flex justify-end items-center">
-                          {new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                  {msg.content.split(/\n\s*\n/).filter(p => p.trim() !== '').map((paragraph, pIdx, arr) => {
+                    const isFirst = pIdx === 0;
+                    const isLast = pIdx === arr.length - 1;
+                    
+                    let borderRadius = '';
+                    if (isUser) {
+                      // Outgoing: Top-left and Bottom-left are always 18px
+                      // Top-right is 18px ONLY if it's the first paragraph
+                      // Bottom-right is ALWAYS 6px (last one gets tail overlay)
+                      borderRadius = `18px ${isFirst ? '18px' : '6px'} 6px 18px`;
+                    } else {
+                      // Incoming: Top-right and Bottom-right are always 18px
+                      // Top-left is 18px ONLY if it's the first paragraph
+                      // Bottom-left is ALWAYS 6px
+                      borderRadius = `${isFirst ? '18px' : '6px'} 18px 18px 6px`;
+                    }
+
+                    return (
+                      <div 
+                        key={pIdx}
+                        style={{ borderRadius }}
+                        className={`px-3 py-1.5 shadow-sm text-[15px] relative whitespace-pre-wrap break-words ${
+                          isUser 
+                            ? 'bg-[var(--tg-chat-bubble-out)] text-[var(--tg-chat-bubble-out-text)] tg-bubble-out ' + (isLast ? 'tg-bubble-out-tail' : '')
+                            : 'bg-[var(--tg-chat-bubble-in)] text-[var(--tg-chat-bubble-in-text)] tg-bubble-in ' + (isLast ? 'tg-bubble-in-tail' : '')
+                        }`}
+                      >
+                        {paragraph}
+                        {isLast && (
+                          <div className="text-[11px] text-right mt-1 opacity-70 flex justify-end items-center">
+                            {new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                             {isUser && <CheckCheck size={16} className="ml-1 opacity-80" />}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 
@@ -339,7 +359,7 @@ const ChatArea = ({ onOpenModelInfo }) => {
                     </div>
                     
                     {msg.stats && (msg.stats.isExact || msg.stats.promptTokens > 0 || msg.stats.completionTokens > 0) && (
-                      <div className={`text-[10px] text-[var(--tg-hint-color)] flex items-center gap-2 bg-[var(--tg-secondary-bg-color)]/30 px-2 py-0.5 rounded-full border border-[var(--tg-border-color)]/20`}>
+                      <div className="text-[10px] text-[var(--tg-hint-color)] flex items-center gap-2 px-1">
                         {isUser ? (
                           msg.stats.promptTokens > 0 && <span>Prompt: {msg.stats.promptTokens} tkn</span>
                         ) : (
