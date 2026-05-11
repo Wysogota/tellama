@@ -26,6 +26,9 @@
     --tg-border-color: #dfe1e5;
     --tg-status-color: rgb(170, 170, 170);
     --tg-chat-bg-image: url('/assets/backgrounds/chat_bg_light.png');
+    
+    --tg-search-bg: #f1f1f1;
+    --tg-search-bg-focused: #ffffff;
   }
   
   .dark {
@@ -51,6 +54,9 @@
     --tg-border-color: #0f0f0f;
     --tg-status-color: #aaaaaa;
     --tg-chat-bg-image: url('/assets/backgrounds/chat_bg_dark.png');
+
+    --tg-search-bg: #181818;
+    --tg-search-bg-focused: #202020;
   }
 }
 
@@ -100,6 +106,39 @@ body {
   color: var(--tg-text-color);
   margin: 0;
   overflow: hidden; /* Prevent scrolling on body, handled in containers */
+}
+
+/* Global Selection and Caret Styles */
+::selection {
+  background-color: rgba(135, 116, 225, 0.3); /* Transparent version of lilac #8774e1 */
+  color: inherit;
+}
+
+input, textarea {
+  caret-color: #8774e1; /* Lilac color */
+}
+
+/* Ripple effect */
+.ripple-container {
+  position: relative;
+  overflow: hidden;
+}
+
+.ripple-effect {
+  position: absolute;
+  border-radius: 50%;
+  background: var(--tg-text-color);
+  opacity: 0.08;
+  transform: scale(0);
+  animation: ripple-animation 800ms ease-out;
+  pointer-events: none;
+}
+
+@keyframes ripple-animation {
+  to {
+    transform: scale(4);
+    opacity: 0;
+  }
 }
 
 /* Custom scrollbar for webkit */

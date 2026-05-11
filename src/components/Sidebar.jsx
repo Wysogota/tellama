@@ -6,6 +6,7 @@ const Sidebar = ({ onOpenSettings, onOpenPersonasList, onOpenUserProfile }) => {
   const { personas, chatSessions, activeChatId, setActiveChatId, messages, userProfiles, activeUserProfileId } = useAppContext();
   const [searchQuery, setSearchQuery] = useState('');
 
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
   const activeUser = userProfiles.find(p => p.id === activeUserProfileId) || userProfiles[0];
 
   const filteredChats = chatSessions
@@ -14,6 +15,26 @@ const Sidebar = ({ onOpenSettings, onOpenPersonasList, onOpenUserProfile }) => {
       persona: personas.find(p => p.id === session.persona_id)
     }))
     .filter(({ persona }) => persona && persona.name.toLowerCase().includes(searchQuery.toLowerCase()));
+
+  const createRipple = (event) => {
+    const button = event.currentTarget;
+    const circle = document.createElement("span");
+    const diameter = Math.max(button.clientWidth, button.clientHeight);
+    const radius = diameter / 2;
+
+    circle.style.width = circle.style.height = `${diameter}px`;
+    circle.style.left = `${event.clientX - button.getBoundingClientRect().left - radius}px`;
+    circle.style.top = `${event.clientY - button.getBoundingClientRect().top - radius}px`;
+    circle.classList.add("ripple-effect");
+
+    const ripple = button.getElementsByClassName("ripple-effect")[0];
+
+    if (ripple) {
+      ripple.remove();
+    }
+
+    button.appendChild(circle);
+  };
 
   return (
     <div className="w-full md:w-[320px] lg:w-[380px] bg-[var(--tg-sidebar-bg)] md:border-r border-[var(--tg-border-color)] flex flex-col h-full z-10 relative shadow-sm flex-shrink-0">
@@ -25,16 +46,18 @@ const Sidebar = ({ onOpenSettings, onOpenPersonasList, onOpenUserProfile }) => {
           <Menu size={24} />
         </button>
         <div className="relative flex-grow">
-          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <Search size={18} className="text-[var(--tg-hint-color)]" />
+          <div className={`flex items-center h-[40px] rounded-full px-3 transition-all duration-200 ${isSearchFocused ? 'bg-[var(--tg-search-bg-focused)] shadow-[0_2px_8px_rgba(0,0,0,0.2)]' : 'bg-[var(--tg-search-bg)]'}`}>
+            <Search size={18} className="mr-2 text-[var(--tg-hint-color)] flex-shrink-0" />
+            <input
+              type="text"
+              className="w-full bg-transparent text-[var(--tg-text-color)] outline-none text-sm caret-[var(--tg-link-color)]"
+              placeholder="Search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onFocus={() => setIsSearchFocused(true)}
+              onBlur={() => setIsSearchFocused(false)}
+            />
           </div>
-          <input
-            type="text"
-            className="w-full bg-[var(--tg-secondary-bg-color)] text-[var(--tg-text-color)] rounded-full py-1.5 pl-10 pr-4 outline-none focus:ring-1 focus:ring-[var(--tg-link-color)] transition-shadow text-sm"
-            placeholder="Search"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
         </div>
       </div>
 
@@ -77,8 +100,11 @@ const Sidebar = ({ onOpenSettings, onOpenPersonasList, onOpenUserProfile }) => {
           return (
             <div
               key={session.id}
-              onClick={() => setActiveChatId(session.id)}
-              className={`flex items-center px-3 py-[10px] cursor-pointer transition-all duration-200 mb-1 rounded-[10px] ${
+              onClick={(e) => {
+                createRipple(e);
+                setActiveChatId(session.id);
+              }}
+              className={`flex items-center px-3 py-[10px] cursor-pointer transition-all duration-200 mb-1 rounded-[10px] ripple-container select-none ${
                 isActive 
                   ? 'bg-[var(--tg-sidebar-active)] text-[var(--tg-sidebar-active-text)]' 
                   : 'hover:bg-[var(--tg-sidebar-hover)] text-[var(--tg-text-color)]'

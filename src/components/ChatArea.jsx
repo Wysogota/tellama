@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { Paperclip, SendHorizontal, MoreVertical, Loader2, Edit2, Trash2, RotateCcw, ChevronLeft, ChevronRight, ArrowLeft, CheckCheck, Smile, Mic } from 'lucide-react';
+import { Paperclip, SendHorizontal, MoreVertical, Loader2, Edit2, Trash2, RotateCcw, ChevronLeft, ChevronRight, ArrowLeft, CheckCheck, Smile, Mic, Search, X, Calendar } from 'lucide-react';
 import { generateChatResponse } from '../services/api';
 
 const ChatArea = ({ onOpenModelInfo }) => {
@@ -199,6 +199,22 @@ const ChatArea = ({ onOpenModelInfo }) => {
     }
   };
 
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isSearchActive, setIsSearchActive] = useState(false);
+  const [chatSearchQuery, setChatSearchQuery] = useState('');
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (menuRef.current && !menuRef.current.contains(event.target)) {
+        setIsMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   if (!activeChatId || !activePersona) {
     return (
       <div className="flex-grow flex flex-col h-full bg-[var(--tg-chat-bg)] relative overflow-hidden">
@@ -214,13 +230,37 @@ const ChatArea = ({ onOpenModelInfo }) => {
     );
   }
 
+  const handleDeleteChat = (e) => {
+    e.stopPropagation();
+    setIsMenuOpen(false);
+    if (window.confirm(`Are you sure you want to delete the chat with ${activePersona.name}?`)) {
+      deleteChat(activeChatId);
+    }
+  };
+
+  const scrollToMessage = (id) => {
+    const element = document.getElementById(`msg-${id}`);
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // Add a brief highlight effect
+      element.classList.add('bg-blue-500/10');
+      setTimeout(() => element.classList.remove('bg-blue-500/10'), 2000);
+    }
+    setIsSearchActive(false);
+    setChatSearchQuery('');
+  };
+
+  const searchResults = chatSearchQuery.trim() 
+    ? activeMessages.filter(m => m.content.toLowerCase().includes(chatSearchQuery.toLowerCase()))
+    : [];
+
   return (
     <div className="flex-grow flex flex-col h-full bg-[var(--tg-chat-bg)] relative overflow-hidden">
       <div className="absolute inset-0 bg-cover bg-center bg-no-repeat" style={{ backgroundImage: 'var(--tg-chat-bg-image)' }}></div>
       <div className="absolute inset-0 opacity-[0.05] pointer-events-none" style={{ backgroundSize: '400px' }}></div>
       
       {/* Header */}
-      <div className="h-[60px] flex-shrink-0 bg-[var(--tg-bg-color)] border-b border-[var(--tg-border-color)] flex items-center px-2 md:px-4 z-10 transition-colors shadow-sm">
+      <div className="h-[60px] flex-shrink-0 bg-[var(--tg-bg-color)] border-b border-[var(--tg-border-color)] flex items-center px-2 md:px-4 z-30 transition-colors shadow-sm relative">
         <button 
           onClick={() => setActiveChatId(null)}
           className="md:hidden p-2 mr-1 text-[var(--tg-hint-color)] hover:bg-[var(--tg-secondary-bg-color)] rounded-full transition-colors"
@@ -245,23 +285,148 @@ const ChatArea = ({ onOpenModelInfo }) => {
             </span>
           </div>
         </div>
+        
         <div className="flex items-center gap-1">
           <button 
-            className="p-2 text-red-500/70 hover:text-red-500 hover:bg-red-500/10 rounded-full transition-colors"
-            onClick={(e) => {
-              e.stopPropagation();
-              if (window.confirm(`Are you sure you want to delete the chat with ${activePersona.name}?`)) {
-                deleteChat(activeChatId);
-              }
-            }}
-            title="Delete Chat"
+            onClick={() => setIsSearchActive(!isSearchActive)}
+            className={`p-2 rounded-full transition-colors ${isSearchActive ? 'bg-[var(--tg-secondary-bg-color)] text-[var(--tg-link-color)]' : 'text-[var(--tg-hint-color)] hover:bg-[var(--tg-secondary-bg-color)]'}`}
           >
-            <Trash2 size={20} />
+            <Search size={20} />
           </button>
-          <button className="p-2 text-[var(--tg-hint-color)] hover:bg-[var(--tg-secondary-bg-color)] rounded-full transition-colors">
-            <MoreVertical size={20} />
-          </button>
+          
+          <div className="relative" ref={menuRef}>
+            <button 
+              onClick={() => setIsMenuOpen(!isMenuOpen)}
+              className={`p-2 text-[var(--tg-hint-color)] hover:bg-[var(--tg-secondary-bg-color)] rounded-full transition-colors ${isMenuOpen ? 'bg-[var(--tg-secondary-bg-color)] text-[var(--tg-link-color)]' : ''}`}
+            >
+              <MoreVertical size={20} />
+            </button>
+            
+            {isMenuOpen && (
+              <div className="absolute right-0 top-[100%] mt-2 w-64 bg-[var(--tg-bg-color)] border border-[var(--tg-border-color)] rounded-xl shadow-2xl overflow-hidden z-50 py-1 transition-all">
+                <button className="w-full flex items-center justify-between px-4 py-2.5 text-[var(--tg-text-color)] hover:bg-[var(--tg-secondary-bg-color)] transition-colors text-[15px] opacity-50 cursor-default">
+                  <div className="flex items-center gap-3">
+                    <RotateCcw size={18} className="text-[var(--tg-hint-color)]" />
+                    <span>Auto-delete</span>
+                  </div>
+                  <ChevronRight size={16} className="text-[var(--tg-hint-color)]" />
+                </button>
+                
+                <button className="w-full flex items-center gap-3 px-4 py-2.5 text-[var(--tg-text-color)] hover:bg-[var(--tg-secondary-bg-color)] transition-colors text-[15px] opacity-50 cursor-default">
+                  <CheckCheck size={18} className="text-[var(--tg-hint-color)]" />
+                  <span>Select Messages</span>
+                </button>
+
+                <button 
+                  onClick={handleDeleteChat}
+                  className="w-full flex items-center gap-3 px-4 py-2.5 text-red-500 hover:bg-red-500/5 transition-colors text-[15px]"
+                >
+                  <Trash2 size={18} />
+                  <span>Delete Chat</span>
+                </button>
+              </div>
+            )}
+          </div>
         </div>
+
+        {/* Search Bar Overlay */}
+        {isSearchActive && (
+          <div className="absolute inset-0 bg-[var(--tg-bg-color)] z-40 flex flex-col animate-in fade-in duration-200">
+            <div className="h-[60px] flex items-center px-2 md:px-4 flex-shrink-0">
+              {/* Mirror back button placeholder to match mobile layout shift */}
+              <button className="md:hidden p-2 mr-1 opacity-0 pointer-events-none">
+                <ArrowLeft size={24} />
+              </button>
+
+              {/* Avatar - Wrapped in p-1 to match normal header's info container padding */}
+              <div className="p-1 flex items-center mr-2">
+                <div className="w-10 h-10 rounded-full overflow-hidden bg-blue-500/20 flex-shrink-0">
+                  {activePersona.avatar ? (
+                    <img src={activePersona.avatar} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-blue-500 font-bold text-lg">
+                      {activePersona.name.charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                </div>
+              </div>
+              
+              {/* Search Capsule - Height matched to avatar (40px) */}
+              <div className="flex-grow flex items-center h-full">
+                <div className={`flex-grow flex items-center h-[40px] rounded-full px-4 transition-all duration-200 ${isSearchFocused ? 'bg-[var(--tg-search-bg-focused)] shadow-[0_2px_8px_rgba(0,0,0,0.2)]' : 'bg-[var(--tg-search-bg)]'}`}>
+                  <Search size={18} className="mr-3 text-[var(--tg-hint-color)] flex-shrink-0" />
+                  <input 
+                    autoFocus
+                    type="text"
+                    className="flex-grow bg-transparent text-[var(--tg-text-color)] text-[16px] outline-none caret-[var(--tg-link-color)]"
+                    placeholder="Search"
+                    value={chatSearchQuery}
+                    onChange={(e) => setChatSearchQuery(e.target.value)}
+                    onFocus={() => setIsSearchFocused(true)}
+                    onBlur={() => setIsSearchFocused(false)}
+                  />
+                </div>
+              </div>
+
+              {/* Action buttons - Perfectly mirrored positions */}
+              <div className="flex items-center gap-1 ml-2">
+                <button 
+                  onClick={() => { setIsSearchActive(false); setChatSearchQuery(''); }}
+                  className="p-2 text-[var(--tg-hint-color)] hover:bg-[var(--tg-secondary-bg-color)] rounded-full transition-colors"
+                >
+                  <X size={20} />
+                </button>
+                <button className="p-2 text-[var(--tg-hint-color)] hover:bg-[var(--tg-secondary-bg-color)] rounded-full transition-colors">
+                  <Calendar size={20} />
+                </button>
+              </div>
+            </div>
+            
+            {chatSearchQuery.trim() && (
+              <div className="absolute top-[60px] left-0 right-0 max-h-[400px] overflow-y-auto bg-[var(--tg-bg-color)] shadow-2xl border-b border-[var(--tg-border-color)] z-50 custom-scrollbar">
+                {searchResults.length > 0 ? (
+                  <div className="flex flex-col">
+                    {searchResults.map((msg) => {
+                      const sender = msg.sender === 'user' ? activeUser : activePersona;
+                      return (
+                        <div 
+                          key={msg.id}
+                          onClick={() => scrollToMessage(msg.id)}
+                          className="flex items-center px-4 py-3 hover:bg-[var(--tg-secondary-bg-color)] cursor-pointer transition-colors border-b border-[var(--tg-border-color)] last:border-0"
+                        >
+                          <div className="w-10 h-10 rounded-full overflow-hidden bg-blue-500/20 flex-shrink-0 mr-3">
+                            {sender?.avatar ? (
+                              <img src={sender.avatar} className="w-full h-full object-cover" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-blue-500 font-bold">
+                                {sender?.name?.charAt(0).toUpperCase()}
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex-grow min-w-0">
+                            <div className="flex justify-between items-baseline">
+                              <span className="font-semibold text-[15px] truncate">{sender?.name}</span>
+                              <span className="text-[12px] text-[var(--tg-hint-color)] ml-2 flex-shrink-0">
+                                {new Date(msg.timestamp).toLocaleDateString()}
+                              </span>
+                            </div>
+                            <p className="text-[14px] text-[var(--tg-hint-color)] truncate">
+                              {msg.content}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="p-8 text-center text-[var(--tg-hint-color)]">
+                    No results found for "{chatSearchQuery}"
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Messages */}
@@ -285,7 +450,7 @@ const ChatArea = ({ onOpenModelInfo }) => {
           const hasVariants = siblings.length > 1;
 
           return (
-            <div key={msg.id} className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} group`}>
+            <div key={msg.id} id={`msg-${msg.id}`} className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} group transition-colors duration-500 rounded-lg p-1`}>
 
               {isEditing ? (
                 <div className={`max-w-[75%] rounded-2xl p-3 shadow-sm bg-[var(--tg-secondary-bg-color)] border border-[var(--tg-link-color)] w-full`}>
