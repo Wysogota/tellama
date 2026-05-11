@@ -94,6 +94,7 @@ export async function applyProfileFromServer(profile) {
 
 export async function deleteProfile(id) {
   await db.exec('DELETE FROM user_profiles WHERE id = ?', [id]);
+  await logDeletion(id, 'user_profiles');
 }
 
 // ─── Personas (Contacts) ─────────────────────────────────────────────────────
@@ -137,6 +138,7 @@ export async function applyPersonaFromServer(persona) {
 
 export async function deletePersona(id) {
   await db.exec('DELETE FROM personas WHERE id = ?', [id]);
+  await logDeletion(id, 'personas');
 }
 
 // ─── Chat Sessions ───────────────────────────────────────────────────────────
@@ -157,8 +159,16 @@ export async function upsertSession(session) {
 }
 
 export async function deleteSession(id) {
+  // First, log and delete all messages for this session
+  const { rows } = await db.query('SELECT id FROM messages WHERE session_id = ?', [id]);
+  for (const row of rows) {
+    await logDeletion(row.id, 'messages');
+  }
+  await db.exec('DELETE FROM messages WHERE session_id = ?', [id]);
+  
   await db.exec('DELETE FROM chat_sessions WHERE id = ?', [id]);
   await db.exec('DELETE FROM session_branch_state WHERE session_id = ?', [id]);
+  await logDeletion(id, 'chat_sessions');
 }
 
 // ─── Messages ────────────────────────────────────────────────────────────────
@@ -207,6 +217,14 @@ export async function updateMessageMetadata(id, metadata) {
 }
 
 export async function deleteMessageCascade(msgId) {
+  const { rows } = await db.query(`
+    WITH RECURSIVE to_delete(id) AS (
+      SELECT ? UNION ALL
+      SELECT m.id FROM messages m JOIN to_delete td ON m.parent_message_id = td.id
+    )
+    SELECT id FROM to_delete
+  `, [msgId]);
+
   // Recursively delete via SQL CTE
   await db.exec(`
     WITH RECURSIVE to_delete(id) AS (
@@ -215,6 +233,10 @@ export async function deleteMessageCascade(msgId) {
     )
     DELETE FROM messages WHERE id IN (SELECT id FROM to_delete)
   `, [msgId]);
+
+  for (const row of rows) {
+    await logDeletion(row.id, 'messages');
+  }
 }
 
 export async function upsertBranchState(sessionId, parentMsgId, activeIdx) {
@@ -322,13 +344,14 @@ export function buildMessageTree(msgRows, branchRows) {
 // ─── Pending Records for Sync ─────────────────────────────────────────────────
 
 export async function getPendingRecords() {
-  const [profiles, personas, sessions, messages, branchState, app_settings] = await Promise.all([
+  const [profiles, personas, sessions, messages, branchState, app_settings, deleted_records] = await Promise.all([
     db.query("SELECT *, 'user_profiles' as _table FROM user_profiles WHERE sync_status='pending'"),
     db.query("SELECT *, 'personas' as _table FROM personas WHERE sync_status='pending'"),
     db.query("SELECT *, 'chat_sessions' as _table FROM chat_sessions WHERE sync_status='pending'"),
     db.query("SELECT *, 'messages' as _table FROM messages WHERE sync_status='pending'"),
     db.query("SELECT *, 'session_branch_state' as _table FROM session_branch_state WHERE sync_status='pending'"),
     db.query("SELECT *, 'app_settings' as _table FROM app_settings WHERE sync_status='pending'"),
+    db.query("SELECT *, 'deleted_records' as _table FROM deleted_records WHERE sync_status='pending'"),
   ]);
   return [
     ...profiles.rows,
@@ -337,6 +360,7 @@ export async function getPendingRecords() {
     ...messages.rows,
     ...branchState.rows,
     ...app_settings.rows,
+    ...deleted_records.rows,
   ];
 }
 
@@ -359,4 +383,26 @@ export async function markSynced(table, ids) {
   }
   const placeholders = ids.map(() => '?').join(',');
   await db.exec(`UPDATE ${table} SET sync_status='synced' WHERE id IN (${placeholders})`, ids);
+}
+
+// ─── Deleted Records Sync ─────────────────────────────────────────────────────
+
+export async function applyDeletionFromServer(id, table_name, deleted_at) {
+  if (['user_profiles', 'personas', 'chat_sessions', 'messages'].includes(table_name)) {
+     await db.exec(`DELETE FROM ${table_name} WHERE id = ?`, [id]);
+     if (table_name === 'chat_sessions') {
+       await db.exec(`DELETE FROM session_branch_state WHERE session_id = ?`, [id]);
+     }
+  }
+  await db.exec(`INSERT INTO deleted_records (id, table_name, deleted_at, sync_status) VALUES (?, ?, ?, 'synced') ON CONFLICT(id, table_name) DO UPDATE SET deleted_at=excluded.deleted_at, sync_status='synced'`, [id, table_name, deleted_at]);
+}
+
+async function logDeletion(id, table_name) {
+  const t = now();
+  await db.exec(
+    `INSERT INTO deleted_records (id, table_name, deleted_at, sync_status) 
+     VALUES (?, ?, ?, 'pending') 
+     ON CONFLICT(id, table_name) DO UPDATE SET deleted_at=excluded.deleted_at, sync_status='pending'`,
+    [id, table_name, t]
+  );
 }

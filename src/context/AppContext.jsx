@@ -10,7 +10,8 @@ const SERVER_URL = 'http://localhost:3001';
 const AppContext = createContext();
 
 export const AppProvider = ({ children }) => {
-  const [contacts, setContacts] = useState([]);
+  const [personas, setPersonas] = useState([]);
+  const [chatSessions, setChatSessions] = useState([]);
   const [userProfiles, setUserProfiles] = useState([]);
   const [activeUserProfileId, setActiveUserProfileId] = useState(null);
   const [activeChatId, setActiveChatId] = useState(null);
@@ -76,14 +77,17 @@ export const AppProvider = ({ children }) => {
           if (lsContacts.length > 0) {
             for (const c of lsContacts) {
               try {
-                await queries.upsertPersona(c);
-                await queries.upsertSession({ id: c.id, userProfileId: profileId, personaId: c.id });
-              } catch(e) { console.warn('upsertPersona/Session failed:', e.message); }
+                // Set updatedAt to 1 so the server overrides it if it exists
+                await queries.upsertPersona({ ...c, updatedAt: 1 });
+              } catch(e) { console.warn('upsertPersona failed:', e.message); }
             }
             for (const [personaId, chatData] of Object.entries(lsMessages)) {
-              if (chatData?.nodes) {
+              if (chatData?.nodes && Object.keys(chatData.nodes).length > 0) {
+                try {
+                  await queries.upsertSession({ id: personaId, userProfileId: profileId, personaId: personaId, createdAt: 1, updatedAt: 1 });
+                } catch(e) {}
                 for (const node of Object.values(chatData.nodes)) {
-                  try { await queries.insertMessage({ ...node, sessionId: personaId }); } catch(e) {}
+                  try { await queries.insertMessage({ ...node, sessionId: personaId, timestamp: node.timestamp || 1 }); } catch(e) {}
                 }
                 for (const [parentKey, idx] of Object.entries(chatData.activeChildIndex || {})) {
                   try { await queries.upsertBranchState(personaId, parentKey === 'null' ? null : parentKey, idx); } catch(e) {}
@@ -111,7 +115,8 @@ export const AppProvider = ({ children }) => {
 
         console.log('[Init] Setting state — profiles:', profiles.length, '| personas:', personas.length, '| activeUser:', activeUserId);
         setUserProfiles(profiles);
-        setContacts(personas);
+        setPersonas(personas);
+        setChatSessions(sessions);
         setActiveUserProfileId(activeUserId);
         setMessages(allMessages);
 
@@ -138,6 +143,7 @@ export const AppProvider = ({ children }) => {
             const dbPersonas = await queries.getAllPersonas();
             const dbProfiles = await queries.getAllProfiles();
             const mergedSessions = await queries.getAllSessions();
+            setChatSessions(mergedSessions);
             const mergedMessages = {};
             for (const session of mergedSessions) {
               const msgRows = await queries.getMessagesForSession(session.id);
@@ -155,15 +161,14 @@ export const AppProvider = ({ children }) => {
 
             if (dbPersonas.length > 0) {
               // Keep local persona if it is newer (user is editing)
-              setContacts(prev => {
+              setPersonas(prev => {
                 const merged = dbPersonas.map(dbC => {
                   const local = prev.find(c => c.id === dbC.id);
                   return (local?.updatedAt > dbC.updatedAt) ? local : dbC;
                 });
-                // Also keep local-only personas not yet on server
-                const serverIds = new Set(dbPersonas.map(c => c.id));
-                const localOnly = prev.filter(c => !serverIds.has(c.id));
-                return [...localOnly, ...merged];
+                // We do NOT add localOnly here because if the server deleted it, it won't be in dbPersonas!
+                // Any newly created persona is already in SQLite, so it will be in dbPersonas.
+                return merged;
               });
             }
 
@@ -190,7 +195,7 @@ export const AppProvider = ({ children }) => {
         const lsSettings = JSON.parse(localStorage.getItem('tellama_settings') || 'null');
         const lsActiveUser = localStorage.getItem('tellama_active_user');
         if (lsProfiles.length > 0) setUserProfiles(lsProfiles);
-        if (lsContacts.length > 0) setContacts(lsContacts);
+        if (lsContacts.length > 0) setPersonas(lsContacts);
         if (Object.keys(lsMessages).length > 0) setMessages(lsMessages);
         if (lsSettings) setSettings(lsSettings);
         if (lsActiveUser) setActiveUserProfileId(lsActiveUser);
@@ -203,10 +208,10 @@ export const AppProvider = ({ children }) => {
   // localStorage backup writes (resilience for in-memory SQLite mode)
   // Wrapped in try-catch to handle QuotaExceededError gracefully
   useEffect(() => {
-    if (contacts.length > 0) {
-      try { localStorage.setItem('tellama_contacts', JSON.stringify(contacts)); } catch(e) { console.warn('localStorage quota exceeded for contacts'); }
+    if (personas.length > 0) {
+      try { localStorage.setItem('tellama_contacts', JSON.stringify(personas)); } catch(e) { console.warn('localStorage quota exceeded for contacts'); }
     }
-  }, [contacts]);
+  }, [personas]);
   useEffect(() => {
     if (userProfiles.length > 0) {
       try { localStorage.setItem('tellama_user_profiles', JSON.stringify(userProfiles)); } catch(e) { console.warn('localStorage quota exceeded for profiles'); }
@@ -237,60 +242,90 @@ export const AppProvider = ({ children }) => {
   // Derived state: calculate all unique tags used across contacts
   const allTags = React.useMemo(() => {
     const tagsSet = new Set();
-    contacts.forEach(c => {
+    personas.forEach(c => {
       if (Array.isArray(c.traits)) c.traits.forEach(t => tagsSet.add(t));
       if (Array.isArray(c.style)) c.style.forEach(t => tagsSet.add(t));
     });
     return Array.from(tagsSet);
-  }, [contacts]);
+  }, [personas]);
 
   // Contact operations
-  const addContact = async (contactInfo) => {
+  const addPersona = async (contactInfo) => {
     const id = uuidv4();
-    const newContact = { 
+    const newPersona = { 
       id, 
       ...contactInfo, 
       traits: Array.isArray(contactInfo.traits) ? contactInfo.traits : [],
       style: Array.isArray(contactInfo.style) ? contactInfo.style : [],
       createdAt: Date.now() 
     };
-    const profileId = activeUserProfileId || userProfiles[0]?.id;
-    if (!profileId) {
-      console.error('[AppContext] Cannot create contact: no user profile available');
-      return null;
-    }
     try {
-      await queries.upsertPersona(newContact);
-      await queries.upsertSession({ id, userProfileId: profileId, personaId: id });
+      await queries.upsertPersona(newPersona);
     } catch (e) {
-      console.error('[addContact] SQLite failed (data kept in localStorage):', e.message);
+      console.error('[addPersona] SQLite failed (data kept in localStorage):', e.message);
     }
     // Always update React state so localStorage backup fires
-    setContacts(prev => [newContact, ...prev]);
-    setMessages(prev => ({ ...prev, [id]: { nodes: {}, rootId: null, activeChildIndex: {} } }));
+    setPersonas(prev => [newPersona, ...prev]);
     return id;
   };
 
-  const updateContact = async (id, updates) => {
-    const contact = contacts.find(c => c.id === id);
-    if (!contact) return;
+  const updatePersona = async (id, updates) => {
+    const persona = personas.find(c => c.id === id);
+    if (!persona) return;
     // Set updatedAt so reloadFromDB knows this is newer than anything from server
-    const updated = { ...contact, ...updates, updatedAt: Date.now() };
+    const updated = { ...persona, ...updates, updatedAt: Date.now() };
     try {
       await queries.upsertPersona(updated);
     } catch (e) {
-      console.error('[updateContact] SQLite failed (data kept in localStorage):', e.message);
+      console.error('[updatePersona] SQLite failed (data kept in localStorage):', e.message);
     }
     // Always update React state regardless of SQLite result
-    setContacts(prev => prev.map(c => c.id === id ? updated : c));
+    setPersonas(prev => prev.map(c => c.id === id ? updated : c));
     // Push immediately so other browsers get the update without waiting for the interval
-    sync.syncPush(SERVER_URL).catch(e => console.warn('[updateContact] Immediate push failed:', e.message));
+    sync.syncPush(SERVER_URL).catch(e => console.warn('[updatePersona] Immediate push failed:', e.message));
+  };
+
+  const deletePersona = async (id) => {
+    await queries.deletePersona(id);
+    setPersonas(prev => prev.filter(p => p.id !== id));
+    sync.syncPush(SERVER_URL).catch(e => console.warn('[deletePersona] Immediate push failed:', e.message));
+  };
+
+  const startChat = async (personaId) => {
+    const existingSession = chatSessions.find(s => s.persona_id === personaId && s.user_profile_id === activeUserProfileId);
+    if (existingSession) {
+      setActiveChatId(existingSession.id);
+      return existingSession.id;
+    }
+    const sessionId = uuidv4();
+    const newSession = {
+      id: sessionId,
+      userProfileId: activeUserProfileId || userProfiles[0]?.id,
+      personaId: personaId,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
+    try {
+      await queries.upsertSession(newSession);
+    } catch (e) {
+      console.error('[startChat] SQLite failed:', e.message);
+    }
+    const newSessionRow = {
+      id: sessionId,
+      user_profile_id: newSession.userProfileId,
+      persona_id: newSession.personaId,
+      created_at: newSession.createdAt,
+      updated_at: newSession.updatedAt
+    };
+    setChatSessions(prev => [newSessionRow, ...prev]);
+    setMessages(prev => ({ ...prev, [sessionId]: { nodes: {}, rootId: null, activeChildIndex: {} } }));
+    setActiveChatId(sessionId);
+    return sessionId;
   };
 
   const deleteChat = async (chatId) => {
-    await queries.deletePersona(chatId);
     await queries.deleteSession(chatId);
-    setContacts(prev => prev.filter(c => c.id !== chatId));
+    setChatSessions(prev => prev.filter(s => s.id !== chatId));
     setMessages(prev => {
       const newMessages = { ...prev };
       delete newMessages[chatId];
@@ -299,6 +334,7 @@ export const AppProvider = ({ children }) => {
     if (activeChatId === chatId) {
       setActiveChatId(null);
     }
+    sync.syncPush(SERVER_URL).catch(e => console.warn('[deleteChat] Immediate push failed:', e.message));
   };
 
   // User Profile operations
@@ -526,9 +562,9 @@ export const AppProvider = ({ children }) => {
 
   return (
     <AppContext.Provider value={{
-      contacts, activeChatId, setActiveChatId, messages, settings, allTags,
+      personas, chatSessions, activeChatId, setActiveChatId, messages, settings, allTags,
       userProfiles, activeUserProfileId, setActiveUserProfileId: changeActiveUserProfile,
-      addContact, updateContact, deleteChat,
+      addPersona, updatePersona, deletePersona, startChat, deleteChat,
       addUserProfile, updateUserProfile, deleteUserProfile,
       addMessage, updateMessage, updateMessageMetadata, setFullMessageContent, deleteMessageNode, switchBranch, updateSettings,
       getNewAbortSignal, clearGeneration, isGlobalGenerating,

@@ -182,6 +182,13 @@ export async function syncPull(serverUrl) {
                 data.updated_at
               );
             }
+            if (_table === 'deleted_records') {
+              await queries.applyDeletionFromServer(
+                data.id,
+                data.table_name,
+                data.deleted_at
+              );
+            }
           } catch (err) {
             console.error(`[SyncManager] Error applying ${_table} record:`, err.message);
           }
@@ -204,13 +211,13 @@ export function startSync(serverUrl, onPullComplete = null, intervalMs = 60000) 
   _wsServerUrl = serverUrl;
   _wsOnInvalidate = onPullComplete;
 
-  // Initial pull on startup
+  // Initial sync on startup
   const runInitial = async () => {
+    await syncPush(serverUrl);
     const hasUpdates = await syncPull(serverUrl);
     if (hasUpdates && onPullComplete) {
       try { await onPullComplete(); } catch (e) { console.warn('[SyncManager] onPullComplete error:', e.message); }
     }
-    await syncPush(serverUrl);
   };
   runInitial();
 
@@ -219,11 +226,11 @@ export function startSync(serverUrl, onPullComplete = null, intervalMs = 60000) 
 
   // Fallback: periodic full sync in case WS events were missed
   const fallbackSync = async () => {
+    await syncPush(serverUrl);
     const hasUpdates = await syncPull(serverUrl);
     if (hasUpdates && onPullComplete) {
       try { await onPullComplete(); } catch (e) { console.warn('[SyncManager] fallback onPullComplete error:', e.message); }
     }
-    await syncPush(serverUrl);
   };
   syncInterval = setInterval(fallbackSync, intervalMs);
 

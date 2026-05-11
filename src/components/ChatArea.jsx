@@ -4,7 +4,7 @@ import { Paperclip, SendHorizontal, MoreVertical, Loader2, Edit2, Trash2, Rotate
 import { generateChatResponse } from '../services/api';
 
 const ChatArea = ({ onOpenModelInfo }) => {
-  const { contacts, activeChatId, setActiveChatId, messages, addMessage, updateMessage, setFullMessageContent, deleteMessageNode, switchBranch, settings, userProfiles, activeUserProfileId, deleteChat, getNewAbortSignal, clearGeneration, streamingMessages, updateMessageMetadata } = useAppContext();
+  const { personas, chatSessions, activeChatId, setActiveChatId, messages, addMessage, updateMessage, setFullMessageContent, deleteMessageNode, switchBranch, settings, userProfiles, activeUserProfileId, deleteChat, getNewAbortSignal, clearGeneration, streamingMessages, updateMessageMetadata } = useAppContext();
   const [inputText, setInputText] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [editingMessageId, setEditingMessageId] = useState(null);
@@ -12,7 +12,8 @@ const ChatArea = ({ onOpenModelInfo }) => {
   const [statusOverride, setStatusOverride] = useState(null);
   const messagesEndRef = useRef(null);
 
-  const activeContact = contacts.find(c => c.id === activeChatId);
+  const activeChat = chatSessions.find(s => s.id === activeChatId);
+  const activePersona = activeChat ? personas.find(p => p.id === activeChat.persona_id) : null;
   const activeUser = userProfiles.find(p => p.id === activeUserProfileId) || userProfiles[0];
   const chatData = messages[activeChatId];
 
@@ -79,7 +80,7 @@ const ChatArea = ({ onOpenModelInfo }) => {
     let stats = null;
     let aborted = false;
     try {
-      const result = await generateChatResponse(settings, activeContact, activeUser, historyToPass, (chunk) => {
+      const result = await generateChatResponse(settings, activePersona, activeUser, historyToPass, (chunk) => {
         botResponseText += chunk;
         setStreamingText(botResponseText);
         scrollToBottom();
@@ -123,7 +124,7 @@ const ChatArea = ({ onOpenModelInfo }) => {
   };
 
   const handleSendRobust = async () => {
-    if (!inputText.trim() || !activeContact || isGenerating) return;
+    if (!inputText.trim() || !activePersona || isGenerating) return;
     const userText = inputText.trim();
     setInputText('');
     
@@ -198,7 +199,7 @@ const ChatArea = ({ onOpenModelInfo }) => {
     }
   };
 
-  if (!activeChatId || !activeContact) {
+  if (!activeChatId || !activePersona) {
     return (
       <div className="flex-grow flex flex-col h-full bg-[var(--tg-chat-bg)] relative overflow-hidden">
         <div className="h-[60px] w-full bg-[var(--tg-bg-color)] border-b border-[var(--tg-border-color)] flex-shrink-0 z-10"></div>
@@ -228,14 +229,14 @@ const ChatArea = ({ onOpenModelInfo }) => {
         </button>
         <div className="flex-grow flex items-center cursor-pointer overflow-hidden p-1 rounded-lg" onClick={onOpenModelInfo}>
           <div className="w-10 h-10 rounded-full overflow-hidden bg-gradient-to-br from-blue-400 to-blue-600 flex-shrink-0 flex items-center justify-center text-white font-semibold text-lg mr-3 shadow-sm">
-            {activeContact.avatar ? (
-              <img src={activeContact.avatar} className="w-full h-full object-cover" />
+            {activePersona.avatar ? (
+              <img src={activePersona.avatar} className="w-full h-full object-cover" />
             ) : (
-              activeContact.name.charAt(0).toUpperCase()
+              activePersona.name.charAt(0).toUpperCase()
             )}
           </div>
           <div className="flex flex-col flex-grow">
-            <h2 className="font-semibold text-[var(--tg-text-color)] text-[16px] leading-tight">{activeContact.name}</h2>
+            <h2 className="font-semibold text-[var(--tg-text-color)] text-[16px] leading-tight">{activePersona.name}</h2>
             <span 
               className="text-[13px] font-medium transition-colors duration-300" 
               style={{ color: (displayIsGenerating || statusOverride === 'online') ? 'var(--tg-link-color)' : 'var(--tg-status-color)' }}
@@ -249,8 +250,8 @@ const ChatArea = ({ onOpenModelInfo }) => {
             className="p-2 text-red-500/70 hover:text-red-500 hover:bg-red-500/10 rounded-full transition-colors"
             onClick={(e) => {
               e.stopPropagation();
-              if (window.confirm(`Are you sure you want to delete the chat with ${activeContact.name}?`)) {
-                deleteChat(activeContact.id);
+              if (window.confirm(`Are you sure you want to delete the chat with ${activePersona.name}?`)) {
+                deleteChat(activeChatId);
               }
             }}
             title="Delete Chat"

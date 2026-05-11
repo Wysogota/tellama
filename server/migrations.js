@@ -76,6 +76,16 @@ export function runServerMigrations() {
     )
   `);
 
+  db.exec(`DROP TABLE IF EXISTS deleted_records`);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS deleted_records (
+      id          TEXT NOT NULL,
+      table_name  TEXT NOT NULL,
+      deleted_at  INTEGER NOT NULL,
+      PRIMARY KEY (id, table_name)
+    )
+  `);
+
   try {
     db.exec(`ALTER TABLE messages ADD COLUMN metadata TEXT DEFAULT '{}'`);
   } catch (e) {}

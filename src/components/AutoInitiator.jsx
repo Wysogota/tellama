@@ -14,40 +14,46 @@ const FREQUENCY_MAP = {
 const STALE_THRESHOLD = 60000; // 1 minute (for testing, ideally longer in prod)
 
 const AutoInitiator = () => {
-  const { contacts, messages, addMessage, settings, userProfiles, activeUserProfileId, getNewAbortSignal, clearGeneration, setStreamingMessage, clearStreamingMessage } = useAppContext();
+  const { personas, chatSessions, messages, addMessage, settings, userProfiles, activeUserProfileId, getNewAbortSignal, clearGeneration, setStreamingMessage, clearStreamingMessage } = useAppContext();
   const isGeneratingRef = useRef(false);
 
   // We use refs to keep track of latest state inside setInterval
-  const contactsRef = useRef(contacts);
+  const personasRef = useRef(personas);
+  const chatSessionsRef = useRef(chatSessions);
   const messagesRef = useRef(messages);
   const settingsRef = useRef(settings);
   const userProfilesRef = useRef(userProfiles);
   const activeUserProfileIdRef = useRef(activeUserProfileId);
 
   useEffect(() => {
-    contactsRef.current = contacts;
+    personasRef.current = personas;
+    chatSessionsRef.current = chatSessions;
     messagesRef.current = messages;
     settingsRef.current = settings;
     userProfilesRef.current = userProfiles;
     activeUserProfileIdRef.current = activeUserProfileId;
-  }, [contacts, messages, settings, userProfiles, activeUserProfileId]);
+  }, [personas, chatSessions, messages, settings, userProfiles, activeUserProfileId]);
 
   useEffect(() => {
     const interval = setInterval(async () => {
       if (isGeneratingRef.current) return;
 
-      const currentContacts = contactsRef.current;
+      const currentPersonas = personasRef.current;
+      const currentSessions = chatSessionsRef.current;
       const currentMessages = messagesRef.current;
       const currentSettings = settingsRef.current;
       
       const activeUser = userProfilesRef.current.find(p => p.id === activeUserProfileIdRef.current) || userProfilesRef.current[0];
 
-      // Find eligible contacts
-      const eligibleContacts = currentContacts.filter(c => {
-        const freq = c.initiativeFrequency || 'never';
+      // Find eligible sessions
+      const eligibleSessions = currentSessions.filter(session => {
+        const persona = currentPersonas.find(p => p.id === session.persona_id);
+        if (!persona) return false;
+
+        const freq = persona.initiativeFrequency || 'never';
         if (freq === 'never') return false;
 
-        const chatData = currentMessages[c.id];
+        const chatData = currentMessages[session.id];
         if (!chatData || !chatData.rootId) return true; // Can initiate first message
 
         // Compute linear path to find last message
@@ -69,18 +75,19 @@ const AutoInitiator = () => {
         return timeSinceLast > STALE_THRESHOLD;
       });
 
-      if (eligibleContacts.length === 0) return;
+      if (eligibleSessions.length === 0) return;
 
-      // Pick a random eligible contact to evaluate
-      const contactToEvaluate = eligibleContacts[Math.floor(Math.random() * eligibleContacts.length)];
-      const probability = FREQUENCY_MAP[contactToEvaluate.initiativeFrequency || 'never'];
+      // Pick a random eligible session to evaluate
+      const sessionToEvaluate = eligibleSessions[Math.floor(Math.random() * eligibleSessions.length)];
+      const personaToEvaluate = currentPersonas.find(p => p.id === sessionToEvaluate.persona_id);
+      const probability = FREQUENCY_MAP[personaToEvaluate.initiativeFrequency || 'never'];
 
       if (Math.random() < probability) {
         // Trigger spontaneous message
         isGeneratingRef.current = true;
-        console.log(`[AutoInitiator] Triggering spontaneous message for ${contactToEvaluate.name}`);
+        console.log(`[AutoInitiator] Triggering spontaneous message for ${personaToEvaluate.name}`);
 
-        const chatId = contactToEvaluate.id;
+        const chatId = sessionToEvaluate.id;
         const chatData = currentMessages[chatId];
         
         let chatMessages = [];
@@ -98,7 +105,7 @@ const AutoInitiator = () => {
 
         try {
           const signal = getNewAbortSignal(chatId, false);
-          await generateChatResponse(currentSettings, contactToEvaluate, activeUser, chatMessages, (chunk) => {
+          await generateChatResponse(currentSettings, personaToEvaluate, activeUser, chatMessages, (chunk) => {
             botResponseText += chunk;
             // Stream text into global state so ChatArea shows typing bubble
             setStreamingMessage(chatId, botResponseText);

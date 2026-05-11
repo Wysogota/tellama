@@ -94,12 +94,24 @@ export async function runMigrations() {
     )
   `);
 
+  await db.exec(`DROP TABLE IF EXISTS deleted_records`);
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS deleted_records (
+      id          TEXT NOT NULL,
+      table_name  TEXT NOT NULL,
+      deleted_at  INTEGER NOT NULL,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      PRIMARY KEY (id, table_name)
+    )
+  `);
+
   // Indexes
   await db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_session   ON messages(session_id)`);
   await db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_parent    ON messages(parent_message_id)`);
   await db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_pending   ON messages(sync_status) WHERE sync_status = 'pending'`);
   await db.exec(`CREATE INDEX IF NOT EXISTS idx_personas_pending   ON personas(sync_status) WHERE sync_status = 'pending'`);
   await db.exec(`CREATE INDEX IF NOT EXISTS idx_profiles_pending   ON user_profiles(sync_status) WHERE sync_status = 'pending'`);
+  await db.exec(`CREATE INDEX IF NOT EXISTS idx_deleted_pending    ON deleted_records(sync_status) WHERE sync_status = 'pending'`);
 
   try {
     await db.exec(`ALTER TABLE messages ADD COLUMN metadata TEXT DEFAULT '{}'`);

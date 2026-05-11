@@ -5,13 +5,13 @@ import { fetchModelInfo } from '../services/api';
 import AvatarUpload from './AvatarUpload';
 import TagInput from './TagInput';
 
-const ContactModal = ({ onClose, editingContactId = null }) => {
-  const { contacts, addContact, updateContact, settings, allTags } = useAppContext();
+const PersonaModal = ({ onClose, editingPersonaId = null }) => {
+  const { personas, addPersona, updatePersona, settings, allTags } = useAppContext();
   
-  const existingContact = editingContactId ? contacts.find(c => c.id === editingContactId) : null;
+  const existingPersona = editingPersonaId ? personas.find(c => c.id === editingPersonaId) : null;
   
   const [formData, setFormData] = useState(
-    existingContact || {
+    existingPersona || {
       name: '',
       biography: '',
       age: '',
@@ -24,20 +24,20 @@ const ContactModal = ({ onClose, editingContactId = null }) => {
     }
   );
 
-  // Initialize form from existing contact — runs ONCE when modal opens (not on every contacts update).
-  // Depending on [existingContact] would reset the form whenever a background pull updates contacts.
+  // Initialize form from existing persona — runs ONCE when modal opens (not on every personas update).
+  // Depending on [existingPersona] would reset the form whenever a background pull updates personas.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (existingContact) {
+    if (existingPersona) {
       setFormData({
-        ...existingContact,
-        age: existingContact.age || '',
-        gender: existingContact.gender || '',
-        traits: Array.isArray(existingContact.traits) ? existingContact.traits : (existingContact.traits ? [existingContact.traits] : []),
-        style: Array.isArray(existingContact.style) ? existingContact.style : (existingContact.style ? [existingContact.style] : [])
+        ...existingPersona,
+        age: existingPersona.age || '',
+        gender: existingPersona.gender || '',
+        traits: Array.isArray(existingPersona.traits) ? existingPersona.traits : (existingPersona.traits ? [existingPersona.traits] : []),
+        style: Array.isArray(existingPersona.style) ? existingPersona.style : (existingPersona.style ? [existingPersona.style] : [])
       });
     }
-  }, [editingContactId]); // intentionally NOT [existingContact]
+  }, [editingPersonaId]); // intentionally NOT [existingPersona]
 
   const [modelInfo, setModelInfo] = useState(null);
 
@@ -53,10 +53,10 @@ const ContactModal = ({ onClose, editingContactId = null }) => {
     e.preventDefault();
     if (!formData.name.trim()) return;
 
-    if (editingContactId) {
-      updateContact(editingContactId, formData);
+    if (editingPersonaId) {
+      updatePersona(editingPersonaId, formData);
     } else {
-      addContact(formData);
+      addPersona(formData);
     }
     onClose();
   };
@@ -65,7 +65,7 @@ const ContactModal = ({ onClose, editingContactId = null }) => {
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
       <div className="bg-[var(--tg-bg-color)] w-full max-w-lg rounded-xl shadow-2xl flex flex-col max-h-[90vh]">
         <div className="px-5 py-4 border-b border-[var(--tg-border-color)] flex justify-between items-center bg-[var(--tg-secondary-bg-color)] rounded-t-xl">
-          <h2 className="text-lg font-semibold">{editingContactId ? 'Edit Personality' : 'New Contact / Personality'}</h2>
+          <h2 className="text-lg font-semibold">{editingPersonaId ? 'Edit Personality' : 'New Persona / Personality'}</h2>
           <button onClick={onClose} className="p-1 hover:bg-[var(--tg-border-color)] rounded-full transition-colors">
             <X size={20} className="text-[var(--tg-hint-color)]" />
           </button>
@@ -85,7 +85,7 @@ const ContactModal = ({ onClose, editingContactId = null }) => {
             nameFallback={formData.name}
           />
 
-          <form id="contact-form" onSubmit={handleSubmit} className="space-y-4">
+          <form id="persona-form" onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-[var(--tg-hint-color)] mb-1">Name / Title *</label>
               <input 
@@ -192,10 +192,10 @@ const ContactModal = ({ onClose, editingContactId = null }) => {
         <div className="p-4 border-t border-[var(--tg-border-color)] flex justify-end">
           <button 
             type="submit" 
-            form="contact-form"
+            form="persona-form"
             className="flex items-center gap-2 bg-[var(--tg-button-color)] text-[var(--tg-button-text-color)] px-6 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity"
           >
-            <Check size={18} /> {editingContactId ? 'Save Changes' : 'Create Contact'}
+            <Check size={18} /> {editingPersonaId ? 'Save Changes' : 'Create Persona'}
           </button>
         </div>
       </div>
@@ -203,4 +203,4 @@ const ContactModal = ({ onClose, editingContactId = null }) => {
   );
 };
 
-export default ContactModal;
+export default PersonaModal;

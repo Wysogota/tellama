@@ -1,16 +1,19 @@
 import React, { useState } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { Search, Edit, Menu } from 'lucide-react';
+import { Search, Users, Menu } from 'lucide-react';
 
-const Sidebar = ({ onOpenSettings, onOpenNewContact, onOpenUserProfile }) => {
-  const { contacts, activeChatId, setActiveChatId, messages, userProfiles, activeUserProfileId } = useAppContext();
+const Sidebar = ({ onOpenSettings, onOpenPersonasList, onOpenUserProfile }) => {
+  const { personas, chatSessions, activeChatId, setActiveChatId, messages, userProfiles, activeUserProfileId } = useAppContext();
   const [searchQuery, setSearchQuery] = useState('');
 
   const activeUser = userProfiles.find(p => p.id === activeUserProfileId) || userProfiles[0];
 
-  const filteredContacts = contacts.filter(c => 
-    c.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredChats = chatSessions
+    .map(session => ({
+      session,
+      persona: personas.find(p => p.id === session.persona_id)
+    }))
+    .filter(({ persona }) => persona && persona.name.toLowerCase().includes(searchQuery.toLowerCase()));
 
   return (
     <div className="w-full md:w-[320px] lg:w-[380px] bg-[var(--tg-sidebar-bg)] md:border-r border-[var(--tg-border-color)] flex flex-col h-full z-10 relative shadow-sm flex-shrink-0">
@@ -56,8 +59,8 @@ const Sidebar = ({ onOpenSettings, onOpenNewContact, onOpenUserProfile }) => {
       )}
 
       <div className="flex-grow overflow-y-auto px-2 py-1">
-        {filteredContacts.map(contact => {
-          const chatData = messages[contact.id];
+        {filteredChats.map(({ session, persona }) => {
+          const chatData = messages[session.id];
           let lastMessage = null;
           
           if (chatData && chatData.rootId) {
@@ -69,12 +72,12 @@ const Sidebar = ({ onOpenSettings, onOpenNewContact, onOpenUserProfile }) => {
             }
           }
 
-          const isActive = activeChatId === contact.id;
+          const isActive = activeChatId === session.id;
 
           return (
             <div
-              key={contact.id}
-              onClick={() => setActiveChatId(contact.id)}
+              key={session.id}
+              onClick={() => setActiveChatId(session.id)}
               className={`flex items-center px-3 py-[10px] cursor-pointer transition-all duration-200 mb-1 rounded-[10px] ${
                 isActive 
                   ? 'bg-[var(--tg-sidebar-active)] text-[var(--tg-sidebar-active-text)]' 
@@ -82,15 +85,15 @@ const Sidebar = ({ onOpenSettings, onOpenNewContact, onOpenUserProfile }) => {
               }`}
             >
               <div className="w-[54px] h-[54px] rounded-full overflow-hidden bg-gradient-to-br from-blue-400 to-blue-600 flex-shrink-0 flex items-center justify-center text-white font-semibold text-xl mr-3 shadow-sm">
-                {contact.avatar ? (
-                  <img src={contact.avatar} className="w-full h-full object-cover" />
+                {persona.avatar ? (
+                  <img src={persona.avatar} className="w-full h-full object-cover" />
                 ) : (
-                  contact.name.charAt(0).toUpperCase()
+                  persona.name.charAt(0).toUpperCase()
                 )}
               </div>
               <div className="flex-grow min-w-0 flex flex-col justify-center h-full">
                 <div className="flex justify-between items-baseline mb-0.5">
-                  <h3 className="font-semibold truncate text-[16px]">{contact.name}</h3>
+                  <h3 className="font-semibold truncate text-[16px]">{persona.name}</h3>
                   {lastMessage && (
                     <span className={`text-[12px] ml-2 flex-shrink-0 ${isActive ? 'text-white/80' : 'text-[var(--tg-hint-color)]'}`}>
                       {new Date(lastMessage.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
@@ -107,10 +110,10 @@ const Sidebar = ({ onOpenSettings, onOpenNewContact, onOpenUserProfile }) => {
       </div>
 
       <button
-        onClick={onOpenNewContact}
+        onClick={onOpenPersonasList}
         className="absolute bottom-6 right-6 w-14 h-14 bg-[var(--tg-button-color)] rounded-full flex items-center justify-center text-[var(--tg-button-text-color)] shadow-lg hover:scale-105 transition-transform active:scale-95"
       >
-        <Edit size={24} />
+        <Users size={24} />
       </button>
     </div>
   );
