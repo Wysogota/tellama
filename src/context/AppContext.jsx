@@ -56,7 +56,7 @@ export const AppProvider = ({ children }) => {
 
           if (lsProfiles.length > 0) {
             for (const p of lsProfiles) {
-              try { await queries.upsertProfile(p); } catch(e) { console.warn('upsertProfile failed:', e.message); }
+              try { await queries.upsertProfile({ ...p, updatedAt: 1 }); } catch(e) { console.warn('upsertProfile failed:', e.message); }
             }
             profiles = lsProfiles;
             if (lsActiveUser) await queries.setSyncMeta('active_user_id', lsActiveUser).catch(() => {});
@@ -422,6 +422,7 @@ export const AppProvider = ({ children }) => {
 
       return { ...prev, [chatId]: { nodes: newNodes, rootId: newRootId, activeChildIndex: newActiveChildIndex } };
     });
+    sync.syncPush(SERVER_URL).catch(e => console.warn('[addMessage] Immediate push failed:', e.message));
     return id;
   };
 
@@ -441,6 +442,7 @@ export const AppProvider = ({ children }) => {
         }
       }
     }));
+    sync.syncPush(SERVER_URL).catch(e => console.warn('[updateMessage] Immediate push failed:', e.message));
   };
 
   const setFullMessageContent = async (chatId, messageId, fullContent) => {
@@ -455,6 +457,7 @@ export const AppProvider = ({ children }) => {
         }
       }
     }));
+    sync.syncPush(SERVER_URL).catch(e => console.warn('[setFullMessageContent] Immediate push failed:', e.message));
   };
 
   const deleteMessageNode = async (chatId, messageId) => {
@@ -466,6 +469,7 @@ export const AppProvider = ({ children }) => {
       ...prev,
       [chatId]: queries.buildMessageTree(msgRows, branchRows)
     }));
+    sync.syncPush(SERVER_URL).catch(e => console.warn('[deleteMessageNode] Immediate push failed:', e.message));
   };
 
   const updateMessageMetadata = async (chatId, messageId, metadata) => {
@@ -484,6 +488,7 @@ export const AppProvider = ({ children }) => {
         }
       };
     });
+    sync.syncPush(SERVER_URL).catch(e => console.warn('[updateMessageMetadata] Immediate push failed:', e.message));
   };
 
   const switchBranch = async (chatId, parentId, childIndex) => {
@@ -495,6 +500,7 @@ export const AppProvider = ({ children }) => {
         activeChildIndex: { ...prev[chatId].activeChildIndex, [parentId]: childIndex }
       }
     }));
+    sync.syncPush(SERVER_URL).catch(e => console.warn('[switchBranch] Immediate push failed:', e.message));
   };
 
   const updateSettings = async (newSettings) => {

@@ -15,7 +15,7 @@ function personaToRow(p) {
     initiativeFrequency: p.initiativeFrequency || 'never',
     avatar: p.avatar || null,
   };
-  return { id: p.id, name: p.name, personal_info: JSON.stringify(info), created_at: p.createdAt || now(), updated_at: now() };
+  return { id: p.id, name: p.name, personal_info: JSON.stringify(info), created_at: p.createdAt || now(), updated_at: p.updatedAt || now() };
 }
 
 function rowToPersona(row) {
@@ -38,7 +38,7 @@ function rowToPersona(row) {
 
 function profileToRow(p) {
   const info = { biography: p.biography || '', age: p.age || '', gender: p.gender || '', avatar: p.avatar || null };
-  return { id: p.id, name: p.name, personal_info: JSON.stringify(info), created_at: p.createdAt || now(), updated_at: now() };
+  return { id: p.id, name: p.name, personal_info: JSON.stringify(info), created_at: p.createdAt || now(), updated_at: p.updatedAt || now() };
 }
 
 function rowToProfile(row) {
