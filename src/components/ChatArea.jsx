@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { Paperclip, Send, MoreVertical, Loader2, Edit2, Trash2, RotateCcw, ChevronLeft, ChevronRight, ArrowLeft, CheckCheck } from 'lucide-react';
+import { Paperclip, SendHorizontal, MoreVertical, Loader2, Edit2, Trash2, RotateCcw, ChevronLeft, ChevronRight, ArrowLeft, CheckCheck, Smile, Mic } from 'lucide-react';
 import { generateChatResponse } from '../services/api';
 
 const ChatArea = ({ onOpenModelInfo }) => {
@@ -433,37 +433,47 @@ const ChatArea = ({ onOpenModelInfo }) => {
       </div>
 
       {/* Input */}
-      <div className="p-2 md:p-4 bg-[var(--tg-bg-color)] z-10 flex justify-center border-t border-[var(--tg-border-color)]">
-        <div className="flex items-end w-full max-w-[720px] bg-[var(--tg-bg-color)]">
-          <button className="p-3 text-[var(--tg-hint-color)] hover:text-[var(--tg-link-color)] transition-colors">
-            <Paperclip size={24} />
-          </button>
-          <div className="flex-grow relative">
-            <textarea
-              className="w-full bg-[var(--tg-secondary-bg-color)] text-[var(--tg-text-color)] rounded-xl py-3 px-4 pr-12 outline-none focus:ring-1 focus:ring-[var(--tg-link-color)] resize-none transition-shadow max-h-32 text-[15px]"
-              placeholder="Message"
-              rows={1}
-              value={inputText}
-              onChange={(e) => {
-                setInputText(e.target.value);
-                e.target.style.height = 'auto';
-                e.target.style.height = Math.min(e.target.scrollHeight, 128) + 'px';
-              }}
-              onKeyDown={handleKeyDown}
-            />
-          </div>
-          {inputText.trim() ? (
-            <button 
-              onClick={handleSendRobust}
-              className="p-3 ml-2 text-[var(--tg-link-color)] hover:bg-[var(--tg-secondary-bg-color)] rounded-full transition-colors self-end mb-0.5"
-            >
-              <Send size={24} />
+      <div className="p-2 md:p-4 md:pb-6 z-10 flex justify-center bg-transparent">
+        <div className="flex items-end w-full max-w-[720px] gap-2">
+          {/* Main Input Capsule */}
+          <div className="flex-grow flex items-end bg-[var(--tg-secondary-bg-color)] rounded-[24px] shadow-md px-2 py-1 min-h-[50px]">
+            <button className="p-3 text-[var(--tg-hint-color)] hover:text-[var(--tg-link-color)] transition-colors">
+              <Smile size={24} />
             </button>
-          ) : (
-            <div className="p-3 ml-2 text-[var(--tg-hint-color)] self-end mb-0.5 pointer-events-none">
-               <Send size={24} className="opacity-50" />
+            <div className="flex-grow relative">
+              <textarea
+                className="w-full bg-transparent text-[var(--tg-text-color)] py-3 px-1 outline-none resize-none transition-shadow max-h-32 text-[16px] leading-tight"
+                placeholder="Message"
+                rows={1}
+                value={inputText}
+                onChange={(e) => {
+                  setInputText(e.target.value);
+                  e.target.style.height = 'auto';
+                  e.target.style.height = Math.min(e.target.scrollHeight, 128) + 'px';
+                }}
+                onKeyDown={handleKeyDown}
+              />
             </div>
-          )}
+            <button className="p-3 text-[var(--tg-hint-color)] hover:text-[var(--tg-link-color)] transition-colors">
+              <Paperclip size={24} />
+            </button>
+          </div>
+
+          {/* Action Button (Mic/Send) */}
+          <div className="flex-shrink-0 mb-0.5">
+            {inputText.trim() ? (
+              <button 
+                onClick={handleSendRobust}
+                className="w-[50px] h-[50px] bg-gradient-to-br from-[var(--tg-link-color)] to-purple-600 text-white rounded-full flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 transition-all"
+              >
+                <SendHorizontal size={22} fill="currentColor" className="ml-0.5" />
+              </button>
+            ) : (
+              <button className="w-[50px] h-[50px] bg-gradient-to-br from-[var(--tg-link-color)] to-purple-600 text-white rounded-full flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 transition-all">
+                <Mic size={22} />
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>
