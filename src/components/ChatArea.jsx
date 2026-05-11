@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { Paperclip, SendHorizontal, MoreVertical, Loader2, Edit2, Trash2, RotateCcw, ChevronLeft, ChevronRight, ArrowLeft, CheckCheck, Smile, Mic, Search, X, Calendar } from 'lucide-react';
+import { Paperclip, SendHorizontal, MoreVertical, Loader2, Edit2, Trash2, RotateCcw, ChevronLeft, ChevronRight, ArrowLeft, CheckCheck, Check, Smile, Mic, Search, X, Calendar } from 'lucide-react';
 import { generateChatResponse } from '../services/api';
 
 const ChatArea = ({ onOpenModelInfo }) => {
@@ -498,7 +498,7 @@ const ChatArea = ({ onOpenModelInfo }) => {
                         {isLast && (
                           <div className="text-[11px] text-right mt-1 opacity-70 flex justify-end items-center">
                             {new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                             {isUser && <CheckCheck size={16} className="ml-1 opacity-80" />}
+                             {isUser && (chatData.nodes[msg.id]?.childrenIds?.length > 0 ? <CheckCheck size={16} className="ml-1 opacity-80" /> : <Check size={16} className="ml-1 opacity-80" />)}
                           </div>
                         )}
                       </div>

@@ -148,9 +148,6 @@ Please take this into account when formulating your responses.
 
   } catch (error) {
     console.error("Llama.cpp API Error:", error);
-    if (!isSpontaneous) {
-      onChunk('\n\n[Error communicating with model: ' + error.message + ']');
-    }
     throw error;
   }
 };
