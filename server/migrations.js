@@ -85,6 +85,14 @@ export function runServerMigrations() {
     )
   `);
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS api_keys (
+      provider   TEXT PRIMARY KEY,
+      key_value  TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    )
+  `);
+
   try {
     db.exec(`ALTER TABLE messages ADD COLUMN metadata TEXT DEFAULT '{}'`);
   } catch (e) {}

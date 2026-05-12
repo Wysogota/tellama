@@ -28,7 +28,9 @@ export const AppProvider = ({ children }) => {
   const [messages, setMessages] = useState({});
   const [settings, setSettings] = useState(() => {
     const defaultSettings = { 
-      host: 'http://localhost:8080', 
+      host: 'http://localhost:8080',
+      provider: 'llamacpp',   // 'llamacpp' | 'openrouter' | 'nvidia'
+      modelName: '',          // model name / ID for any provider
       theme: 'light', 
       accentColor: 'blue',
       bgIntensity: 50 

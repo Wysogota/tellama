@@ -4,6 +4,7 @@ import { createServer } from 'http';
 import { WebSocketServer } from 'ws';
 import { runServerMigrations } from './migrations.js';
 import syncRouter, { setNotifyClients } from './routes/sync.js';
+import llmRouter from './routes/llm.js';
 
 const app = express();
 const PORT = 3001;
@@ -42,6 +43,7 @@ setNotifyClients(notifyClients);
 runServerMigrations();
 
 app.use('/sync', syncRouter);
+app.use('/llm', llmRouter);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: Date.now(), clients: wss.clients.size });
