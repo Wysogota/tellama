@@ -12,8 +12,16 @@ const ChatArea = ({ onOpenModelInfo }) => {
   const [editingText, setEditingText] = useState('');
   const [statusOverride, setStatusOverride] = useState(null);
   const [previewFile, setPreviewFile] = useState(null);
+  const [isSearchActive, setIsSearchActive] = useState(false);
+  const [chatSearchQuery, setChatSearchQuery] = useState('');
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [showSearchResults, setShowSearchResults] = useState(true);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
+  const menuRef = useRef(null);
+  const searchContainerRef = useRef(null);
 
   const activeChat = chatSessions.find(s => s.id === activeChatId);
   const activePersona = activeChat ? personas.find(p => p.id === activeChat.persona_id) : null;
@@ -43,6 +51,19 @@ const ChatArea = ({ onOpenModelInfo }) => {
   useEffect(() => {
     scrollToBottom();
   }, [activeMessages.length, isGenerating]);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (menuRef.current && !menuRef.current.contains(event.target)) {
+        setIsMenuOpen(false);
+      }
+      if (searchContainerRef.current && !searchContainerRef.current.contains(event.target)) {
+        setShowSearchResults(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const [streamingText, setStreamingText] = useState('');
   const [streamingParentId, setStreamingParentId] = useState(null);
@@ -88,7 +109,6 @@ const ChatArea = ({ onOpenModelInfo }) => {
 
       if (stats && stats.promptTokens) {
         updateMessageMetadata(activeChatId, parentNodeId, { 
-          ...chatData.nodes[parentNodeId]?.stats,
           promptTokens: stats.promptTokens,
           isExact: true 
         });
@@ -125,7 +145,6 @@ const ChatArea = ({ onOpenModelInfo }) => {
     if ((!inputText.trim() && attachments.length === 0) || !activePersona || isGenerating) return;
     
     let finalContent = inputText.trim();
-    
     let llmContent = finalContent;
     if (attachments.length > 0) {
       const attachmentsText = attachments.map(att => {
@@ -155,8 +174,8 @@ const ChatArea = ({ onOpenModelInfo }) => {
     if (textarea) textarea.style.height = 'auto';
     
     const historyToPass = [...activeMessages, { sender: 'user', content: llmContent }];
-    
     const lastMsgId = activeMessages.length > 0 ? activeMessages[activeMessages.length - 1].id : null;
+    
     const userMsgId = await addMessage(activeChatId, { 
       sender: 'user', 
       content: finalContent,
@@ -166,23 +185,6 @@ const ChatArea = ({ onOpenModelInfo }) => {
     }, lastMsgId);
     
     await startGeneration(historyToPass, userMsgId);
-  };
-
-  const handleRegenerate = async (msg) => {
-    if (isGenerating) return;
-    const parentNodeId = msg.parentId;
-    
-    const historyToPass = [];
-    let curr = chatData.rootId;
-    while (curr && chatData.nodes[curr]) {
-      const node = chatData.nodes[curr];
-      historyToPass.push(node);
-      if (curr === parentNodeId) break;
-      const activeIdx = chatData.activeChildIndex[curr] || 0;
-      curr = node.childrenIds[activeIdx];
-    }
-
-    await startGeneration(historyToPass, parentNodeId);
   };
 
   const handleEditSubmit = async (msg) => {
@@ -206,7 +208,6 @@ const ChatArea = ({ onOpenModelInfo }) => {
         const activeIdx = chatData.activeChildIndex[curr] || 0;
         curr = node.childrenIds[activeIdx];
       }
-      
       await startGeneration(historyToPass, newMsgId);
     }
   };
@@ -252,7 +253,6 @@ const ChatArea = ({ onOpenModelInfo }) => {
         setAttachments(prev => [...prev, attachment]);
       }
     });
-    
     e.target.value = '';
   };
 
@@ -265,42 +265,6 @@ const ChatArea = ({ onOpenModelInfo }) => {
       return prev.filter(a => a.id !== id);
     });
   };
-
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [isSearchActive, setIsSearchActive] = useState(false);
-  const [chatSearchQuery, setChatSearchQuery] = useState('');
-  const [isSearchFocused, setIsSearchFocused] = useState(false);
-  const [showSearchResults, setShowSearchResults] = useState(true);
-  const menuRef = useRef(null);
-  const searchContainerRef = useRef(null);
-
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (menuRef.current && !menuRef.current.contains(event.target)) {
-        setIsMenuOpen(false);
-      }
-      if (searchContainerRef.current && !searchContainerRef.current.contains(event.target)) {
-        setShowSearchResults(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  if (!activeChatId || !activePersona) {
-    return (
-      <div className="flex-grow flex flex-col h-full bg-transparent relative overflow-hidden">
-        <div className="h-[60px] w-full bg-[var(--tg-bg-color)] flex-shrink-0 z-10 md:border-l md:border-r border-[var(--tg-border-color)]"></div>
-        <div className="flex-grow flex items-center justify-center relative">
-          <div className="absolute inset-0 bg-cover bg-center bg-no-repeat" style={{ backgroundImage: 'var(--tg-chat-bg-image)' }}></div>
-          <div className="absolute inset-0 opacity-[0.05] pointer-events-none" style={{ backgroundSize: '400px' }}></div>
-          <div className="bg-[var(--tg-bg-color)] px-4 py-1.5 rounded-full text-sm text-[var(--tg-hint-color)] shadow-sm z-10">
-            Select a chat to start messaging
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   const handleDeleteChat = (e) => {
     e.stopPropagation();
@@ -340,21 +304,14 @@ const ChatArea = ({ onOpenModelInfo }) => {
 
   const renderMessageAttachments = (allAttachments) => {
     if (!allAttachments || allAttachments.length === 0) return null;
-
     return (
       <div className="flex flex-col gap-1 w-full max-w-[280px]">
-        {/* Unified Attachment Grid - All items are square */}
         <div className={`grid gap-[2px] rounded-[18px] overflow-hidden ${allAttachments.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
           {allAttachments.map(att => {
             const isImage = att.type.startsWith('image/');
             const extension = att.name.split('.').pop().toLowerCase().slice(0, 3);
-            
             return (
-              <div 
-                key={att.id} 
-                onClick={() => setPreviewFile(att)}
-                className="relative cursor-pointer overflow-hidden bg-black/5 aspect-square flex flex-col items-center justify-center group"
-              >
+              <div key={att.id} onClick={() => setPreviewFile(att)} className="relative cursor-pointer overflow-hidden bg-black/5 aspect-square flex flex-col items-center justify-center group">
                 {isImage ? (
                   <img src={att.dataUrl || att.previewUrl} className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" alt={att.name} />
                 ) : (
@@ -375,11 +332,130 @@ const ChatArea = ({ onOpenModelInfo }) => {
     );
   };
 
+  const renderMessageBubbles = (msg, prevMsg, nextMsg) => {
+    const isUser = msg.sender === 'user';
+    const isEditing = editingMessageId === msg.id;
+    const hasAttachments = msg.stats?.attachments && msg.stats.attachments.length > 0;
+    
+    const isStartOfChain = !prevMsg || prevMsg.sender !== msg.sender;
+    const isEndOfChain = !nextMsg || nextMsg.sender !== msg.sender;
+    
+    if (isEditing) {
+      return (
+        <div key={msg.id} className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} group p-1 w-full`}>
+          <div className="max-w-[75%] rounded-[18px] p-3 shadow-sm bg-[var(--tg-secondary-bg-color)] border border-[var(--tg-link-color)]">
+            <textarea className="w-full bg-transparent text-[var(--tg-text-color)] outline-none resize-y min-h-[60px]" value={editingText} onChange={(e) => setEditingText(e.target.value)} autoFocus />
+            <div className="flex justify-end gap-2 mt-2">
+              <button onClick={() => setEditingMessageId(null)} className="text-xs text-[var(--tg-hint-color)] px-2 py-1">Cancel</button>
+              <button onClick={() => handleEditSubmit(msg)} className="text-xs bg-[var(--tg-button-color)] text-[var(--tg-button-text-color)] px-3 py-1 rounded">Save</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    const contentParts = (msg.content && !hasAttachments) ? msg.content.split(/\n\s*\n/).filter(p => p.trim()) : [msg.content].filter(Boolean);
+    
+    return (
+      <div key={msg.id} id={`msg-${msg.id}`} className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} group transition-colors duration-500 p-1 w-full relative`}>
+        <div className={`flex flex-col gap-1 max-w-[85%] ${isUser ? 'items-end' : 'items-start'}`}>
+          {hasAttachments && (
+            <div 
+              style={{
+                borderTopLeftRadius: (isStartOfChain || isUser) ? '18px' : '4px',
+                borderTopRightRadius: (isStartOfChain || !isUser) ? '18px' : '4px',
+                borderBottomLeftRadius: (isEndOfChain && !msg.content || isUser) ? '18px' : '4px',
+                borderBottomRightRadius: (isEndOfChain && !msg.content || !isUser) ? '18px' : '4px'
+              }}
+              className={`flex flex-col shadow-sm relative transition-all duration-300 ${isUser ? 'bg-[var(--tg-chat-bubble-out)]' : 'bg-[var(--tg-chat-bubble-in)]'} p-1`}
+            >
+              {renderMessageAttachments(msg.stats.attachments)}
+              {msg.content && (
+                <div className="px-3 py-1.5 whitespace-pre-wrap break-words text-[var(--tg-chat-bubble-in-text)]">
+                  {msg.content}
+                  <div className="px-0 pb-0 text-[11px] text-right mt-1 opacity-70 flex justify-end items-center">
+                    {new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                    {isUser && (chatData.nodes[msg.id]?.childrenIds?.length > 0 ? <CheckCheck size={16} className="ml-1 opacity-80" /> : <Check size={16} className="ml-1 opacity-80" />)}
+                  </div>
+                </div>
+              )}
+              {!msg.content && isEndOfChain && (
+                 <div className={`absolute bottom-0 ${isUser ? '-right-2' : '-left-2'} pointer-events-none`}>
+                   <div className={isUser ? 'tg-bubble-out-tail' : 'tg-bubble-in-tail'} />
+                 </div>
+              )}
+            </div>
+          )}
+          
+          {!hasAttachments && contentParts.map((part, pIdx) => {
+            const isFirstInThisMsg = pIdx === 0;
+            const isLastInThisMsg = pIdx === contentParts.length - 1;
+            
+            const isVeryFirstInChain = isStartOfChain && isFirstInThisMsg;
+            const isVeryLastInChain = isEndOfChain && isLastInThisMsg;
+            
+            const tl = isVeryFirstInChain || isUser ? '18px' : '4px';
+            const tr = isVeryFirstInChain || !isUser ? '18px' : '4px';
+            const bl = isVeryLastInChain || isUser ? '18px' : '4px';
+            const br = isVeryLastInChain || !isUser ? '18px' : '4px';
+
+            return (
+              <div 
+                key={`${msg.id}-p${pIdx}`} 
+                style={{ borderTopLeftRadius: tl, borderTopRightRadius: tr, borderBottomLeftRadius: bl, borderBottomRightRadius: br }}
+                className={`flex flex-col shadow-sm text-[15px] relative transition-all duration-300 ${isUser ? 'bg-[var(--tg-chat-bubble-out)] text-[var(--tg-chat-bubble-out-text)]' : 'bg-[var(--tg-chat-bubble-in)] text-[var(--tg-chat-bubble-in-text)]'} ${isVeryLastInChain ? (isUser ? 'tg-bubble-out-tail' : 'tg-bubble-in-tail') : ''}`}
+              >
+                <div className="px-3 py-1.5 whitespace-pre-wrap break-words">{part}</div>
+                {isLastInThisMsg && (
+                  <div className="px-3 pb-1 text-[11px] text-right mt-0 opacity-70 flex justify-end items-center">
+                    {new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                    {isUser && (chatData.nodes[msg.id]?.childrenIds?.length > 0 ? <CheckCheck size={16} className="ml-1 opacity-80" /> : <Check size={16} className="ml-1 opacity-80" />)}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        
+        {/* Token and Speed Stats - Restored exactly as requested */}
+        <div className={`flex items-center gap-3 mt-1 opacity-0 group-hover:opacity-100 transition-opacity ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
+          {!isEditing && (
+            <>
+              <div className="flex items-center gap-2">
+                <button onClick={() => { setEditingMessageId(msg.id); setEditingText(msg.content); }} className="p-1 text-[var(--tg-hint-color)] hover:bg-[var(--tg-secondary-bg-color)] rounded transition-colors"><Edit2 size={14} /></button>
+                <button onClick={() => deleteMessageNode(activeChatId, msg.id)} className="p-1 text-red-500 hover:bg-red-500/10 rounded transition-colors"><Trash2 size={14} /></button>
+              </div>
+              
+              {msg.stats && (
+                (isUser && msg.stats.promptTokens > 0) || 
+                (!isUser && (msg.stats.completionTokens > 0 || msg.stats.speed > 0))
+              ) && (
+                <div className="text-[10px] text-[var(--tg-hint-color)] flex items-center gap-2 px-1">
+                  {isUser ? (
+                    <span>{msg.stats.promptTokens} tkn</span>
+                  ) : (
+                    <>
+                      {msg.stats.completionTokens > 0 && <span>{msg.stats.completionTokens} tkn</span>}
+                      {msg.stats.speed > 0 && (
+                        <>
+                          <span className="opacity-30">|</span>
+                          <span>{msg.stats.speed?.toFixed(1)} t/s</span>
+                        </>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="flex-grow flex flex-col h-full bg-transparent relative overflow-hidden">
       <div className="absolute inset-0 opacity-[0.05] pointer-events-none" style={{ backgroundSize: '400px' }}></div>
-      
-      {/* Header */}
       <div className="h-[60px] flex-shrink-0 bg-[var(--tg-bg-color)] flex items-center px-2 md:px-4 z-30 transition-colors relative md:border-l md:border-r border-[var(--tg-border-color)]">
         <button onClick={() => setActiveChatId(null)} className="md:hidden p-2 mr-1 text-[var(--tg-hint-color)] hover:bg-[var(--tg-secondary-bg-color)] rounded-full transition-colors flex-shrink-0"><ArrowLeft size={24} /></button>
         <div className="flex-grow flex items-center cursor-pointer overflow-hidden p-1 rounded-lg min-w-0" onClick={onOpenModelInfo}>
@@ -413,32 +489,10 @@ const ChatArea = ({ onOpenModelInfo }) => {
       </div>
 
       <div className="flex-grow overflow-y-auto z-10 custom-scrollbar">
-        <div className="max-w-[720px] mx-auto w-full p-4 flex flex-col space-y-2">
-        {activeMessages.map((msg) => {
-          const isUser = msg.sender === 'user';
-          const isEditing = editingMessageId === msg.id;
-          const hasAttachments = msg.stats?.attachments && msg.stats.attachments.length > 0;
-          return (
-            <div key={msg.id} id={`msg-${msg.id}`} className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} group transition-colors duration-500 rounded-lg p-1`}>
-              {isEditing ? (
-                <div className="max-w-[75%] rounded-[18px] p-3 shadow-sm bg-[var(--tg-secondary-bg-color)] border border-[var(--tg-link-color)]"><textarea className="w-full bg-transparent text-[var(--tg-text-color)] outline-none resize-y min-h-[60px]" value={editingText} onChange={(e) => setEditingText(e.target.value)} autoFocus /><div className="flex justify-end gap-2 mt-2"><button onClick={() => setEditingMessageId(null)} className="text-xs text-[var(--tg-hint-color)] px-2 py-1">Cancel</button><button onClick={() => handleEditSubmit(msg)} className="text-xs bg-[var(--tg-button-color)] text-[var(--tg-button-text-color)] px-3 py-1 rounded">Save</button></div></div>
-              ) : (
-                <div className={`flex flex-col gap-1 max-w-[85%] ${isUser ? 'items-end' : 'items-start'}`}>
-                  <div className={`flex flex-col shadow-sm text-[15px] relative transition-all duration-300 ${isUser ? 'bg-[var(--tg-chat-bubble-out)] text-[var(--tg-chat-bubble-out-text)] tg-bubble-out tg-bubble-out-tail rounded-[18px] rounded-br-[4px]' : 'bg-[var(--tg-chat-bubble-in)] text-[var(--tg-chat-bubble-in-text)] tg-bubble-in tg-bubble-in-tail rounded-[18px] rounded-bl-[4px]'}`}>
-                    {hasAttachments && <div className="p-1 pb-0">{renderMessageAttachments(msg.stats.attachments)}</div>}
-                    {msg.content && <div className={`px-3 py-1.5 ${hasAttachments ? 'pt-0.5' : ''} whitespace-pre-wrap break-words`}>{msg.content}</div>}
-                    <div className={`px-3 pb-1 text-[11px] text-right mt-0 opacity-70 flex justify-end items-center ${!msg.content ? 'pt-1' : ''}`}>{new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}{isUser && (chatData.nodes[msg.id]?.childrenIds?.length > 0 ? <CheckCheck size={16} className="ml-1 opacity-80" /> : <Check size={16} className="ml-1 opacity-80" />)}</div>
-                  </div>
-                </div>
-              )}
-              <div className={`flex items-center gap-3 mt-1 opacity-0 group-hover:opacity-100 transition-opacity ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
-                {!isEditing && (<><button onClick={() => { setEditingMessageId(msg.id); setEditingText(msg.content); }} className="p-1 text-[var(--tg-hint-color)] hover:bg-[var(--tg-secondary-bg-color)] rounded"><Edit2 size={14} /></button><button onClick={() => deleteMessageNode(activeChatId, msg.id)} className="p-1 text-red-500 hover:bg-red-500/10 rounded"><Trash2 size={14} /></button></>)}
-              </div>
-            </div>
-          );
-        })}
-        {displayIsGenerating && <div className="flex flex-col gap-1 max-w-[80%] items-start self-start group"><div className="rounded-[18px] rounded-bl-[4px] px-3 py-1.5 shadow-sm text-[15px] bg-[var(--tg-chat-bubble-in)] text-[var(--tg-chat-bubble-in-text)]">{displayStreamingText || <Loader2 size={16} className="animate-spin text-[var(--tg-link-color)]" />}</div></div>}
-        <div ref={messagesEndRef} />
+        <div className="max-w-[720px] mx-auto w-full p-4 flex flex-col">
+          {activeMessages.map((msg, idx) => renderMessageBubbles(msg, activeMessages[idx-1], activeMessages[idx+1]))}
+          {displayIsGenerating && <div className="flex flex-col gap-1 max-w-[80%] items-start self-start group p-1"><div className="rounded-[18px] rounded-bl-[4px] px-3 py-1.5 shadow-sm text-[15px] bg-[var(--tg-chat-bubble-in)] text-[var(--tg-chat-bubble-in-text)]">{displayStreamingText || <Loader2 size={16} className="animate-spin text-[var(--tg-link-color)]" />}</div></div>}
+          <div ref={messagesEndRef} />
         </div>
       </div>
 
