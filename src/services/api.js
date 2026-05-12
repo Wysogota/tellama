@@ -28,6 +28,34 @@ Please take this into account when formulating your responses.
   return prompt;
 };
 
+/**
+ * Ensures that the messages follow a strict user/assistant alternating pattern.
+ * Merges consecutive messages with the same role and ensures the first message is 'user'.
+ */
+const ensureAlternatingRoles = (messages) => {
+  if (messages.length === 0) return [];
+  
+  const result = [];
+  for (const msg of messages) {
+    if (!msg.content || msg.content.trim() === '') continue;
+    
+    if (result.length > 0 && result[result.length - 1].role === msg.role) {
+      // Merge same-role consecutive messages
+      result[result.length - 1].content += '\n\n' + msg.content;
+    } else {
+      result.push({ role: msg.role, content: msg.content });
+    }
+  }
+
+  // Most strict APIs expect the conversation to start with a 'user' message
+  // If the first message is 'assistant', we insert a dummy user message
+  if (result.length > 0 && result[0].role === 'assistant') {
+    result.unshift({ role: 'user', content: '...' });
+  }
+
+  return result;
+};
+
 // Parse SSE stream chunks, call onChunk for each content delta.
 // Returns { promptTokens, completionTokens, timings } accumulated from the stream.
 const readSseStream = async (response, onChunk) => {
@@ -74,17 +102,25 @@ export const generateChatResponse = async (
 
   const systemPrompt = buildSystemPrompt(contact, activeUser, isSpontaneous);
 
-  const formattedMessages = [
-    { role: 'system', content: systemPrompt },
-    ...messages.map(m => ({ role: m.sender === 'user' ? 'user' : 'assistant', content: m.content })),
-  ];
+  let rawMessages = messages.map(m => ({ 
+    role: m.sender === 'user' ? 'user' : 'assistant', 
+    content: m.content 
+  }));
 
   if (isSpontaneous) {
-    formattedMessages.push({
+    rawMessages.push({
       role: 'user',
       content: '*silence* (Please say something to initiate the conversation naturally)',
     });
   }
+
+  // Strictly alternate roles for cloud providers
+  const historyMessages = ensureAlternatingRoles(rawMessages);
+
+  const formattedMessages = [
+    { role: 'system', content: systemPrompt },
+    ...historyMessages
+  ];
 
   let promptTokens = 0;
   let response;
