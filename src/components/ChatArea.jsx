@@ -260,8 +260,8 @@ const ChatArea = ({ onOpenModelInfo }) => {
     : [];
 
   return (
-    <div className="flex-grow flex flex-col h-full bg-[var(--tg-chat-bg)] relative overflow-hidden">
-      <div className="absolute inset-0 bg-cover bg-center bg-no-repeat" style={{ backgroundImage: 'var(--tg-chat-bg-image)' }}></div>
+    <div className="flex-grow flex flex-col h-full bg-transparent relative overflow-hidden">
+      {/* Background moved to App.jsx to keep it static */}
       <div className="absolute inset-0 opacity-[0.05] pointer-events-none" style={{ backgroundSize: '400px' }}></div>
       
       {/* Header */}

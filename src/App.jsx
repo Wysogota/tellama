@@ -21,11 +21,27 @@ const MainApp = () => {
     if (activeChatId) {
       const activeChat = chatSessions.find(s => s.id === activeChatId);
       if (activeChat) {
-        setEditingPersonaId(activeChat.persona_id);
-        setShowPersonaForm(true);
+        // Toggle behavior: if already open, close it
+        if (showPersonaForm) {
+          setShowPersonaForm(false);
+          setEditingPersonaId(null);
+        } else {
+          setEditingPersonaId(activeChat.persona_id);
+          setShowPersonaForm(true);
+        }
       }
     }
   };
+
+  // Automatically update persona panel when switching chats
+  React.useEffect(() => {
+    if (showPersonaForm && activeChatId && editingPersonaId !== null) {
+      const activeChat = chatSessions.find(s => s.id === activeChatId);
+      if (activeChat) {
+        setEditingPersonaId(activeChat.persona_id);
+      }
+    }
+  }, [activeChatId, showPersonaForm, chatSessions, editingPersonaId]);
 
   return (
     <div className="h-screen w-full flex bg-[var(--tg-bg-color)] text-[var(--tg-text-color)] overflow-hidden font-sans">
@@ -38,8 +54,33 @@ const MainApp = () => {
         />
       </div>
       
-      <div className={`${activeChatId ? 'block w-full md:w-auto' : 'hidden md:block'} h-full flex-grow`}>
-        <ChatArea onOpenModelInfo={handleOpenModelInfo} />
+      <div className={`${activeChatId ? 'block w-full md:w-auto' : 'hidden md:block'} h-full flex-grow flex min-w-0 relative bg-[var(--tg-chat-bg)]`}>
+        {/* Static Background Layer */}
+        <div className="absolute inset-0 bg-cover bg-center bg-no-repeat pointer-events-none" style={{ backgroundImage: 'var(--tg-chat-bg-image)' }}></div>
+        
+        <div className="flex-grow h-full min-w-0 overflow-hidden relative z-10">
+          <ChatArea onOpenModelInfo={handleOpenModelInfo} />
+        </div>
+        
+        <div className={`h-full flex-shrink-0 bg-[var(--tg-bg-color)] transition-all duration-300 ease-in-out overflow-hidden
+          max-md:fixed max-md:inset-0 max-md:z-[60] max-md:w-full
+          ${showPersonaForm && editingPersonaId ? 'max-md:translate-y-0' : 'max-md:-translate-y-full'}
+          md:relative md:border-l md:border-[var(--tg-border-color)]
+          ${showPersonaForm && editingPersonaId ? 'md:w-[320px] lg:w-[380px]' : 'md:w-0 md:border-none'}`}>
+          
+          {showPersonaForm && editingPersonaId && (
+            <div className="w-full md:w-[320px] lg:w-[380px] h-full">
+              <PersonaModal 
+                isModal={false}
+                onClose={() => {
+                  setShowPersonaForm(false);
+                  setEditingPersonaId(null);
+                }} 
+                editingPersonaId={editingPersonaId}
+              />
+            </div>
+          )}
+        </div>
       </div>
 
       {showSettings && (
@@ -56,13 +97,14 @@ const MainApp = () => {
         />
       )}
 
-      {showPersonaForm && (
+      {showPersonaForm && !editingPersonaId && (
         <PersonaModal 
+          isModal={true}
           onClose={() => {
             setShowPersonaForm(false);
             setEditingPersonaId(null);
           }} 
-          editingPersonaId={editingPersonaId}
+          editingPersonaId={null}
         />
       )}
 
