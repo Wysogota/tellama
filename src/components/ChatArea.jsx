@@ -1,16 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { Paperclip, SendHorizontal, MoreVertical, Loader2, Edit2, Trash2, RotateCcw, ChevronLeft, ChevronRight, ArrowLeft, CheckCheck, Check, Smile, Mic, Search, X, Calendar } from 'lucide-react';
+import { Paperclip, SendHorizontal, MoreVertical, Loader2, Edit2, Trash2, RotateCcw, ChevronLeft, ChevronRight, ArrowLeft, CheckCheck, Check, Smile, Mic, Search, X, Calendar, FileText, Image as ImageIcon, XCircle, FileCode, FileType, File, Download, Maximize2 } from 'lucide-react';
 import { generateChatResponse } from '../services/api';
 
 const ChatArea = ({ onOpenModelInfo }) => {
   const { personas, chatSessions, activeChatId, setActiveChatId, messages, addMessage, updateMessage, setFullMessageContent, deleteMessageNode, switchBranch, settings, userProfiles, activeUserProfileId, deleteChat, getNewAbortSignal, clearGeneration, streamingMessages, updateMessageMetadata } = useAppContext();
   const [inputText, setInputText] = useState('');
+  const [attachments, setAttachments] = useState([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [editingMessageId, setEditingMessageId] = useState(null);
   const [editingText, setEditingText] = useState('');
   const [statusOverride, setStatusOverride] = useState(null);
+  const [previewFile, setPreviewFile] = useState(null);
   const messagesEndRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   const activeChat = chatSessions.find(s => s.id === activeChatId);
   const activePersona = activeChat ? personas.find(p => p.id === activeChat.persona_id) : null;
@@ -123,17 +126,42 @@ const ChatArea = ({ onOpenModelInfo }) => {
   };
 
   const handleSendRobust = async () => {
-    if (!inputText.trim() || !activePersona || isGenerating) return;
-    const userText = inputText.trim();
+    if ((!inputText.trim() && attachments.length === 0) || !activePersona || isGenerating) return;
+    
+    let finalContent = inputText.trim();
+    
+    // Process attachments for the prompt
+    if (attachments.length > 0) {
+      const attachmentsText = attachments.map(att => {
+        if (att.content) {
+          return `\n[File: ${att.name}]\n${att.content}\n[End of File: ${att.name}]`;
+        } else {
+          return `\n[Attached binary file: ${att.name}]`;
+        }
+      }).join('\n');
+      
+      finalContent = finalContent ? `${finalContent}\n\n${attachmentsText}` : attachmentsText;
+    }
+
     setInputText('');
     
-    // Add user message to current leaf
-    const historyToPass = [...activeMessages, { sender: 'user', content: userText }];
+    // Cleanup preview URLs
+    attachments.forEach(att => {
+      if (att.previewUrl && att.previewUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(att.previewUrl);
+      }
+    });
+    setAttachments([]); 
+    
+    const textarea = document.querySelector('textarea');
+    if (textarea) textarea.style.height = 'auto';
+    
+    const historyToPass = [...activeMessages, { sender: 'user', content: finalContent }];
     
     const lastMsgId = activeMessages.length > 0 ? activeMessages[activeMessages.length - 1].id : null;
     const userMsgId = await addMessage(activeChatId, { 
       sender: 'user', 
-      content: userText
+      content: finalContent
     }, lastMsgId);
     
     await startGeneration(historyToPass, userMsgId);
@@ -141,10 +169,8 @@ const ChatArea = ({ onOpenModelInfo }) => {
 
   const handleRegenerate = async (msg) => {
     if (isGenerating) return;
-    // msg is the bot message we want to regenerate. Its parent is the user message.
     const parentNodeId = msg.parentId;
     
-    // Determine history up to parent
     const historyToPass = [];
     let curr = chatData.rootId;
     while (curr && chatData.nodes[curr]) {
@@ -166,11 +192,9 @@ const ChatArea = ({ onOpenModelInfo }) => {
       return;
     }
 
-    // Branching: Create a new message as a child of msg.parentId
     const newMsgId = await addMessage(activeChatId, { sender: msg.sender, content: editingText }, msg.parentId);
     setEditingMessageId(null);
 
-    // If it's a user message, we need to generate a new bot response
     if (msg.sender === 'user') {
       const historyToPass = [];
       let curr = chatData.rootId;
@@ -195,6 +219,46 @@ const ChatArea = ({ onOpenModelInfo }) => {
       e.preventDefault();
       handleSendRobust();
     }
+  };
+
+  const handleFileAttach = (e) => {
+    const files = Array.from(e.target.files);
+    if (files.length === 0) return;
+
+    files.forEach(file => {
+      const isImage = file.type.startsWith('image/');
+      const attachment = {
+        id: Math.random().toString(36).substr(2, 9),
+        name: file.name,
+        type: file.type,
+        size: file.size,
+        content: null,
+        previewUrl: isImage ? URL.createObjectURL(file) : null
+      };
+
+      if (file.type.startsWith('text/') || file.name.endsWith('.md') || file.name.endsWith('.json') || file.name.endsWith('.js') || file.name.endsWith('.py')) {
+        const reader = new FileReader();
+        reader.onload = (re) => {
+          attachment.content = re.target.result;
+          setAttachments(prev => [...prev, attachment]);
+        };
+        reader.readAsText(file);
+      } else {
+        setAttachments(prev => [...prev, attachment]);
+      }
+    });
+    
+    e.target.value = '';
+  };
+
+  const removeAttachment = (id) => {
+    setAttachments(prev => {
+      const att = prev.find(a => a.id === id);
+      if (att && att.previewUrl && att.previewUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(att.previewUrl);
+      }
+      return prev.filter(a => a.id !== id);
+    });
   };
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -255,6 +319,13 @@ const ChatArea = ({ onOpenModelInfo }) => {
   const searchResults = chatSearchQuery.trim() 
     ? activeMessages.filter(m => m.content.toLowerCase().includes(chatSearchQuery.toLowerCase()))
     : [];
+
+  const getFileIcon = (att) => {
+    if (att.type.startsWith('image/')) return <ImageIcon size={16} className="text-purple-400" />;
+    if (att.type.includes('javascript') || att.type.includes('python') || att.name.match(/\.(js|py|html|css|json)$/)) return <FileCode size={16} className="text-yellow-400" />;
+    if (att.type.includes('text') || att.name.match(/\.(txt|md)$/)) return <FileText size={16} className="text-blue-400" />;
+    return <File size={16} className="text-gray-400" />;
+  };
 
   return (
     <div className="flex-grow flex flex-col h-full bg-transparent relative overflow-hidden">
@@ -598,34 +669,87 @@ const ChatArea = ({ onOpenModelInfo }) => {
         </div>
       </div>
 
-      {/* Input */}
-      <div className="p-2 md:p-4 md:pb-6 z-10 flex justify-center bg-transparent">
-        <div className="flex items-end w-full max-w-[720px] gap-2">
-          <div className="flex-grow flex items-end bg-[var(--tg-secondary-bg-color)] rounded-[24px] shadow-md px-2 py-1 min-h-[50px]">
-            <button className="p-3 text-[var(--tg-hint-color)] hover:text-[var(--tg-link-color)] transition-colors">
-              <Smile size={24} />
-            </button>
-            <div className="flex-grow relative">
-              <textarea
-                className="w-full bg-transparent text-[var(--tg-text-color)] py-3 px-1 outline-none resize-none transition-shadow max-h-32 text-[16px] leading-tight"
-                placeholder="Message"
-                rows={1}
-                value={inputText}
-                onChange={(e) => {
-                  setInputText(e.target.value);
-                  e.target.style.height = 'auto';
-                  e.target.style.height = Math.min(e.target.scrollHeight, 128) + 'px';
-                }}
-                onKeyDown={handleKeyDown}
-              />
+      {/* Input Section */}
+      <div className="p-2 md:p-4 md:pb-6 z-10 flex flex-col items-center bg-transparent">
+        <div className="w-full max-w-[720px] flex items-end gap-2 relative">
+          
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            onChange={handleFileAttach} 
+            className="hidden" 
+            multiple
+          />
+
+          <div className={`flex-grow flex flex-col bg-[var(--tg-secondary-bg-color)] shadow-md overflow-hidden border border-[var(--tg-border-color)]/30 transition-all duration-300 rounded-[24px]`}>
+            
+            {/* Symmetrical Attachment Area */}
+            <div className={`overflow-hidden transition-all duration-300 ease-in-out ${attachments.length > 0 ? 'max-h-[90px] opacity-100' : 'max-h-0 opacity-0'}`}>
+              <div className="flex overflow-x-auto px-2 gap-2 custom-scrollbar scroll-smooth pt-2 pb-2">
+                {attachments.map(att => (
+                  <div key={att.id} className="flex-shrink-0 relative group animate-in fade-in zoom-in-95 duration-200">
+                    <div 
+                      onClick={() => setPreviewFile(att)}
+                      className="cursor-pointer transition-all"
+                    >
+                      {att.previewUrl ? (
+                        <div className="w-14 h-14 rounded-xl overflow-hidden border border-[var(--tg-border-color)]/50 shadow-sm relative">
+                          <img src={att.previewUrl} className="w-full h-full object-cover" alt={att.name} />
+                        </div>
+                      ) : (
+                        <div className="w-14 h-14 rounded-xl bg-[var(--tg-bg-color)] border border-[var(--tg-border-color)]/50 shadow-sm flex flex-col items-center justify-center p-1 gap-0.5 text-center relative">
+                          {getFileIcon(att)}
+                          <span className="text-[8px] font-medium text-[var(--tg-text-color)] w-full truncate px-0.5">{att.name}</span>
+                        </div>
+                      )}
+                    </div>
+                    
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); removeAttachment(att.id); }}
+                      className="absolute -top-1 -right-1 bg-[var(--tg-bg-color)] text-red-500 rounded-full shadow-md hover:scale-110 active:scale-90 transition-all z-20 w-5 h-5 flex items-center justify-center border border-[var(--tg-border-color)]/30 opacity-0 group-hover:opacity-100"
+                    >
+                      <X size={12} strokeWidth={3} />
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
-            <button className="p-3 text-[var(--tg-hint-color)] hover:text-[var(--tg-link-color)] transition-colors">
-              <Paperclip size={24} />
-            </button>
+
+            {/* Inset Divider */}
+            {attachments.length > 0 && (
+              <div className="mx-8 h-[1px] bg-[var(--tg-border-color)] opacity-40" />
+            )}
+
+            {/* Input Row */}
+            <div className="flex items-end px-2 py-1 min-h-[50px]">
+              <button className="p-3 text-[var(--tg-hint-color)] hover:text-[var(--tg-link-color)] transition-colors">
+                <Smile size={24} />
+              </button>
+              <div className="flex-grow relative">
+                <textarea
+                  className="w-full bg-transparent text-[var(--tg-text-color)] py-3 px-1 outline-none resize-none transition-shadow max-h-32 text-[16px] leading-tight custom-scrollbar"
+                  placeholder="Message"
+                  rows={1}
+                  value={inputText}
+                  onChange={(e) => {
+                    setInputText(e.target.value);
+                    e.target.style.height = 'auto';
+                    e.target.style.height = Math.min(e.target.scrollHeight, 128) + 'px';
+                  }}
+                  onKeyDown={handleKeyDown}
+                />
+              </div>
+              <button 
+                onClick={() => fileInputRef.current?.click()}
+                className="p-3 text-[var(--tg-hint-color)] hover:text-[var(--tg-link-color)] transition-colors"
+              >
+                <Paperclip size={24} />
+              </button>
+            </div>
           </div>
 
           <div className="flex-shrink-0 mb-0.5">
-            {inputText.trim() ? (
+            {inputText.trim() || attachments.length > 0 ? (
               <button 
                 onClick={handleSendRobust}
                 className="w-[50px] h-[50px] bg-gradient-to-br from-[var(--tg-link-color)] to-purple-600 text-white rounded-full flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 transition-all"
@@ -640,6 +764,69 @@ const ChatArea = ({ onOpenModelInfo }) => {
           </div>
         </div>
       </div>
+
+      {/* File Preview Overlay */}
+      {previewFile && (
+        <div 
+          className="fixed inset-0 z-[100] bg-black/90 flex flex-col animate-in fade-in duration-300"
+          onClick={() => setPreviewFile(null)}
+        >
+          <div className="h-[60px] flex items-center justify-between px-6 bg-gradient-to-b from-black/50 to-transparent">
+            <div className="flex flex-col">
+              <span className="text-white font-medium text-[16px] truncate max-w-[300px]">{previewFile.name}</span>
+              <span className="text-gray-400 text-[12px]">{(previewFile.size / 1024).toFixed(1)} KB</span>
+            </div>
+            <div className="flex items-center gap-4">
+              <button className="p-2 text-white hover:bg-white/10 rounded-full transition-colors">
+                <Download size={22} />
+              </button>
+              <button 
+                onClick={() => setPreviewFile(null)}
+                className="p-2 text-white hover:bg-white/10 rounded-full transition-colors"
+              >
+                <X size={24} />
+              </button>
+            </div>
+          </div>
+
+          <div className="flex-grow flex items-center justify-center p-4 overflow-hidden" onClick={e => e.stopPropagation()}>
+            {previewFile.previewUrl ? (
+              <img 
+                src={previewFile.previewUrl} 
+                className="max-w-full max-h-full object-contain shadow-2xl rounded-lg animate-in zoom-in-95 duration-300" 
+                alt={previewFile.name} 
+              />
+            ) : (
+              <div className="w-full max-w-4xl h-full bg-[#1e1e1e] rounded-xl shadow-2xl border border-white/10 flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 duration-300">
+                <div className="h-10 bg-white/5 border-b border-white/10 flex items-center px-4 justify-between">
+                  <div className="flex items-center gap-2">
+                    {getFileIcon(previewFile)}
+                    <span className="text-gray-400 text-xs font-mono">{previewFile.name.split('.').pop().toUpperCase()} File</span>
+                  </div>
+                </div>
+                <div className="flex-grow overflow-auto p-6 custom-scrollbar">
+                  {previewFile.content ? (
+                    <pre className="text-gray-300 font-mono text-[14px] leading-relaxed whitespace-pre-wrap">
+                      {previewFile.content}
+                    </pre>
+                  ) : (
+                    <div className="h-full flex flex-col items-center justify-center text-gray-500 gap-4">
+                      <div className="p-8 bg-white/5 rounded-full">
+                        <File size={64} strokeWidth={1} />
+                      </div>
+                      <span className="text-lg">No text content available for preview</span>
+                      <button className="px-6 py-2 bg-blue-600 text-white rounded-full font-medium hover:bg-blue-700 transition-colors flex items-center gap-2 mt-4">
+                        <Download size={18} />
+                        Download File
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
