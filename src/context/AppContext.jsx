@@ -1,9 +1,10 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { initDatabase } from '../db/DatabaseBridge.js';
+import db, { initDatabase } from '../db/DatabaseBridge.js';
 import { runMigrations } from '../db/migrations.js';
 import * as queries from '../db/queries.js';
 import * as sync from '../sync/SyncManager.js';
+
 
 const SERVER_URL = 'http://localhost:3001';
 
@@ -56,11 +57,25 @@ export const AppProvider = ({ children }) => {
 
           if (lsProfiles.length > 0) {
             for (const p of lsProfiles) {
-              try { await queries.upsertProfile({ ...p, updatedAt: 1 }); } catch(e) { console.warn('upsertProfile failed:', e.message); }
+              try {
+                // Check tombstone before restoring from localStorage
+                const { rows: tombRows } = await db.query(
+                  "SELECT 1 FROM deleted_records WHERE id = ? AND table_name = 'user_profiles'",
+                  [p.id]
+                );
+                if (tombRows.length > 0) {
+                  console.log('[Init] Skipping tombstoned profile from localStorage:', p.id);
+                  continue;
+                }
+                await queries.upsertProfile({ ...p, updatedAt: 1 });
+              } catch(e) { console.warn('upsertProfile failed:', e.message); }
             }
-            profiles = lsProfiles;
+            // Re-read after filtering tombstoned entries
+            profiles = await queries.getAllProfiles();
             if (lsActiveUser) await queries.setSyncMeta('active_user_id', lsActiveUser).catch(() => {});
-          } else {
+          }
+          // If still empty after filtering tombstones — create a default profile
+          if (profiles.length === 0) {
             const defaultProfile = { id: uuidv4(), name: 'User', biography: '', age: '', gender: '', avatar: null, createdAt: Date.now() };
             await queries.upsertProfile(defaultProfile);
             profiles = [defaultProfile];
@@ -77,11 +92,27 @@ export const AppProvider = ({ children }) => {
           if (lsContacts.length > 0) {
             for (const c of lsContacts) {
               try {
-                // Set updatedAt to 1 so the server overrides it if it exists
+                // Check tombstone before restoring from localStorage
+                const { rows: tombRows } = await db.query(
+                  "SELECT 1 FROM deleted_records WHERE id = ? AND table_name = 'personas'",
+                  [c.id]
+                );
+                if (tombRows.length > 0) {
+                  console.log('[Init] Skipping tombstoned persona from localStorage:', c.id);
+                  continue;
+                }
                 await queries.upsertPersona({ ...c, updatedAt: 1 });
               } catch(e) { console.warn('upsertPersona failed:', e.message); }
             }
+            // Import legacy messages for non-tombstoned personas
             for (const [personaId, chatData] of Object.entries(lsMessages)) {
+              // Check tombstone for sessions too
+              const { rows: tombRows } = await db.query(
+                "SELECT 1 FROM deleted_records WHERE id = ? AND table_name = 'chat_sessions'",
+                [personaId]
+              ).catch(() => ({ rows: [] }));
+              if (tombRows.length > 0) continue;
+
               if (chatData?.nodes && Object.keys(chatData.nodes).length > 0) {
                 try {
                   await queries.upsertSession({ id: personaId, userProfileId: profileId, personaId: personaId, createdAt: 1, updatedAt: 1 });
@@ -94,7 +125,7 @@ export const AppProvider = ({ children }) => {
                 }
               }
             }
-            personas = lsContacts;
+            personas = await queries.getAllPersonas();
           }
           console.log('[Init] Personas after fallback:', personas.length);
         }
@@ -207,6 +238,8 @@ export const AppProvider = ({ children }) => {
 
   // localStorage backup writes (resilience for in-memory SQLite mode)
   // Wrapped in try-catch to handle QuotaExceededError gracefully
+  // IMPORTANT: only write if list is non-empty to avoid overwriting a "all deleted" state
+  // with an empty array that might be misread as "no data yet" on next boot.
   useEffect(() => {
     if (personas.length > 0) {
       try { localStorage.setItem('tellama_contacts', JSON.stringify(personas)); } catch(e) { console.warn('localStorage quota exceeded for contacts'); }
@@ -257,7 +290,8 @@ export const AppProvider = ({ children }) => {
       ...contactInfo, 
       traits: Array.isArray(contactInfo.traits) ? contactInfo.traits : [],
       style: Array.isArray(contactInfo.style) ? contactInfo.style : [],
-      createdAt: Date.now() 
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
     };
     try {
       await queries.upsertPersona(newPersona);
@@ -266,6 +300,8 @@ export const AppProvider = ({ children }) => {
     }
     // Always update React state so localStorage backup fires
     setPersonas(prev => [newPersona, ...prev]);
+    // Push immediately so other browsers get the new persona via WebSocket
+    sync.syncPush(SERVER_URL).catch(e => console.warn('[addPersona] Immediate push failed:', e.message));
     return id;
   };
 
@@ -320,6 +356,8 @@ export const AppProvider = ({ children }) => {
     setChatSessions(prev => [newSessionRow, ...prev]);
     setMessages(prev => ({ ...prev, [sessionId]: { nodes: {}, rootId: null, activeChildIndex: {} } }));
     setActiveChatId(sessionId);
+    // Push immediately so other browsers see the new session
+    sync.syncPush(SERVER_URL).catch(e => console.warn('[startChat] Immediate push failed:', e.message));
     return sessionId;
   };
 
@@ -340,9 +378,11 @@ export const AppProvider = ({ children }) => {
   // User Profile operations
   const addUserProfile = async (profileInfo) => {
     const id = uuidv4();
-    const newProfile = { id, ...profileInfo, createdAt: Date.now() };
+    const newProfile = { id, ...profileInfo, createdAt: Date.now(), updatedAt: Date.now() };
     await queries.upsertProfile(newProfile);
     setUserProfiles(prev => [...prev, newProfile]);
+    // Push immediately so other browsers get the new profile via WebSocket
+    sync.syncPush(SERVER_URL).catch(e => console.warn('[addUserProfile] Immediate push failed:', e.message));
     return id;
   };
 
@@ -370,6 +410,8 @@ export const AppProvider = ({ children }) => {
       setActiveUserProfileId(nextId);
       await queries.setSyncMeta('active_user_id', nextId);
     }
+    // Push tombstone immediately so other browsers learn about the deletion
+    sync.syncPush(SERVER_URL).catch(e => console.warn('[deleteUserProfile] Immediate push failed:', e.message));
   };
 
   // Tree Message operations

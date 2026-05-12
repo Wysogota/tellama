@@ -94,7 +94,6 @@ export async function runMigrations() {
     )
   `);
 
-  await db.exec(`DROP TABLE IF EXISTS deleted_records`);
   await db.exec(`
     CREATE TABLE IF NOT EXISTS deleted_records (
       id          TEXT NOT NULL,

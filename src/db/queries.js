@@ -2,6 +2,18 @@ import db from './DatabaseBridge.js';
 
 const now = () => Date.now();
 
+/**
+ * Returns true if the record is in deleted_records (tombstoned).
+ * Used to prevent re-insertion of deleted data during sync pull.
+ */
+async function isTombstoned(id, tableName) {
+  const { rows } = await db.query(
+    'SELECT 1 FROM deleted_records WHERE id = ? AND table_name = ?',
+    [id, tableName]
+  );
+  return rows.length > 0;
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 function personaToRow(p) {
@@ -75,8 +87,14 @@ export async function upsertProfile(profile) {
 /**
  * Apply a user profile received from the server.
  * Only updates local record if server's updated_at is NEWER (true last-write-wins).
+ * Skips insertion if the record is tombstoned (deleted locally or by another client).
  */
 export async function applyProfileFromServer(profile) {
+  // Tombstone guard: never resurrect a deleted record
+  if (await isTombstoned(profile.id, 'user_profiles')) {
+    console.log(`[queries] applyProfileFromServer: skipping tombstoned profile ${profile.id}`);
+    return;
+  }
   const r = profileToRow(profile);
   const serverUpdatedAt = profile.updated_at || r.updated_at;
   await db.exec(
@@ -118,8 +136,14 @@ export async function upsertPersona(persona) {
  * Apply a persona received from the server.
  * Only updates local record if server's updated_at is NEWER (true last-write-wins).
  * Marks sync_status='synced' so it won't be pushed back.
+ * Skips insertion if the record is tombstoned.
  */
 export async function applyPersonaFromServer(persona) {
+  // Tombstone guard: never resurrect a deleted record
+  if (await isTombstoned(persona.id, 'personas')) {
+    console.log(`[queries] applyPersonaFromServer: skipping tombstoned persona ${persona.id}`);
+    return;
+  }
   const r = personaToRow(persona);
   // Use server's actual timestamp, not now()
   const serverUpdatedAt = persona.updated_at || r.updated_at;
@@ -155,6 +179,24 @@ export async function upsertSession(session) {
      VALUES (?, ?, ?, ?, ?, 'pending')
      ON CONFLICT(id) DO UPDATE SET updated_at=excluded.updated_at, sync_status='pending'`,
     [session.id, session.userProfileId, session.personaId, session.createdAt || t, t]
+  );
+}
+
+/**
+ * Apply a chat session received from the server.
+ * Skips if tombstoned.
+ */
+export async function applySessionFromServer(session) {
+  if (await isTombstoned(session.id, 'chat_sessions')) {
+    console.log(`[queries] applySessionFromServer: skipping tombstoned session ${session.id}`);
+    return;
+  }
+  await db.exec(
+    `INSERT INTO chat_sessions (id, user_profile_id, persona_id, created_at, updated_at, sync_status)
+     VALUES (?, ?, ?, ?, ?, 'synced')
+     ON CONFLICT(id) DO UPDATE SET updated_at=excluded.updated_at, sync_status='synced'
+     WHERE excluded.updated_at > chat_sessions.updated_at`,
+    [session.id, session.userProfileId, session.personaId, session.createdAt, session.updatedAt]
   );
 }
 

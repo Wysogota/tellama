@@ -4,6 +4,7 @@ import * as queries from '../db/queries.js';
 
 let syncInterval = null;
 let isSyncing = false;
+let pendingPush = false; // retry flag: true if a push was requested while isSyncing was active
 
 // ─── WebSocket live-update client ────────────────────────────────────────────
 let ws = null;
@@ -67,15 +68,19 @@ export async function getDeviceId() {
 }
 
 export async function syncPush(serverUrl) {
-  if (isSyncing) return;
+  // If already syncing, set a flag so we retry immediately after
+  if (isSyncing) {
+    pendingPush = true;
+    return;
+  }
   isSyncing = true;
+  pendingPush = false;
   
   try {
     const deviceId = await getDeviceId();
     const pending = await queries.getPendingRecords();
     
     if (pending.length === 0) {
-      isSyncing = false;
       return;
     }
 
@@ -89,7 +94,6 @@ export async function syncPush(serverUrl) {
 
     if (response.ok) {
       const { syncedIds } = await response.json();
-      // syncedIds: { user_profiles: [...], personas: [...], ... }
       for (const [table, ids] of Object.entries(syncedIds)) {
         await queries.markSynced(table, ids);
       }
@@ -99,8 +103,14 @@ export async function syncPush(serverUrl) {
     console.error('[SyncManager] Push failed:', e.message);
   } finally {
     isSyncing = false;
+    // If another push was requested while we were syncing, run it now
+    if (pendingPush) {
+      pendingPush = false;
+      setTimeout(() => syncPush(serverUrl), 50);
+    }
   }
 }
+
 
 export async function syncPull(serverUrl) {
   try {
@@ -115,7 +125,23 @@ export async function syncPull(serverUrl) {
       
       if (records.length > 0) {
         console.log(`[SyncManager] Applying ${records.length} updates from server...`);
-        for (const record of records) {
+
+        // ── Pass 1: Apply all tombstones FIRST ──────────────────────────────
+        // The server already sends deleted_records first, but we sort here too
+        // as a defence-in-depth measure against any future ordering changes.
+        const deletions = records.filter(r => r._table === 'deleted_records');
+        const liveRecords = records.filter(r => r._table !== 'deleted_records');
+
+        for (const record of deletions) {
+          try {
+            await queries.applyDeletionFromServer(record.id, record.table_name, record.deleted_at);
+          } catch (err) {
+            console.error(`[SyncManager] Error applying deletion ${record.id}:`, err.message);
+          }
+        }
+
+        // ── Pass 2: Apply live records (tombstoned ones will be silently skipped) ──
+        for (const record of liveRecords) {
           const { _table, ...data } = record;
           try {
             if (_table === 'user_profiles') {
@@ -128,7 +154,7 @@ export async function syncPull(serverUrl) {
                 gender: personalInfo.gender || '',
                 avatar: personalInfo.avatar || null,
                 createdAt: data.created_at,
-                updated_at: data.updated_at,  // pass server timestamp
+                updated_at: data.updated_at,
               });
             }
             if (_table === 'personas') {
@@ -145,11 +171,12 @@ export async function syncPull(serverUrl) {
                 initiativeFrequency: personalInfo.initiativeFrequency || 'never',
                 avatar: personalInfo.avatar || null,
                 createdAt: data.created_at,
-                updated_at: data.updated_at,  // pass server timestamp
+                updated_at: data.updated_at,
               });
             }
             if (_table === 'chat_sessions') {
-              await queries.upsertSession({
+              // Use applySessionFromServer which has tombstone-check (not upsertSession)
+              await queries.applySessionFromServer({
                 id: data.id,
                 userProfileId: data.user_profile_id,
                 personaId: data.persona_id,
@@ -180,13 +207,6 @@ export async function syncPull(serverUrl) {
                 data.key,
                 data.value,
                 data.updated_at
-              );
-            }
-            if (_table === 'deleted_records') {
-              await queries.applyDeletionFromServer(
-                data.id,
-                data.table_name,
-                data.deleted_at
               );
             }
           } catch (err) {

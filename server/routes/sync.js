@@ -147,20 +147,20 @@ router.get('/pull', (req, res) => {
   const sinceTs = parseInt(since) || 0;
 
   try {
-    const records = [];
-    
-    // We fetch everything updated after 'sinceTs'
-    // In a real scenario, we might want to exclude the device that just pushed these
-    // but for simple last-write-wins it's usually okay to pull them back (client will ignore ON CONFLICT)
-    
-    records.push(...db.prepare("SELECT *, 'user_profiles' as _table FROM user_profiles WHERE updated_at > ?").all(sinceTs));
-    records.push(...db.prepare("SELECT *, 'personas' as _table FROM personas WHERE updated_at > ?").all(sinceTs));
-    records.push(...db.prepare("SELECT *, 'chat_sessions' as _table FROM chat_sessions WHERE updated_at > ?").all(sinceTs));
-    records.push(...db.prepare("SELECT *, 'messages' as _table FROM messages WHERE updated_at > ?").all(sinceTs));
-    records.push(...db.prepare("SELECT *, 'session_branch_state' as _table FROM session_branch_state WHERE updated_at > ?").all(sinceTs));
-    records.push(...db.prepare("SELECT *, 'memories_store' as _table FROM memories_store WHERE created_at > ?").all(sinceTs));
-    records.push(...db.prepare("SELECT *, 'app_settings' as _table FROM app_settings WHERE updated_at > ?").all(sinceTs));
-    records.push(...db.prepare("SELECT *, 'deleted_records' as _table FROM deleted_records WHERE deleted_at > ?").all(sinceTs));
+    // IMPORTANT: deleted_records MUST come first so the client applies tombstones
+    // before processing any live records in the same batch. This prevents
+    // a deleted item from being re-inserted by a later record in the same pull.
+    const deletedRecords = db.prepare("SELECT *, 'deleted_records' as _table FROM deleted_records WHERE deleted_at > ?").all(sinceTs);
+    const liveRecords = [
+      ...db.prepare("SELECT *, 'user_profiles' as _table FROM user_profiles WHERE updated_at > ?").all(sinceTs),
+      ...db.prepare("SELECT *, 'personas' as _table FROM personas WHERE updated_at > ?").all(sinceTs),
+      ...db.prepare("SELECT *, 'chat_sessions' as _table FROM chat_sessions WHERE updated_at > ?").all(sinceTs),
+      ...db.prepare("SELECT *, 'messages' as _table FROM messages WHERE updated_at > ?").all(sinceTs),
+      ...db.prepare("SELECT *, 'session_branch_state' as _table FROM session_branch_state WHERE updated_at > ?").all(sinceTs),
+      ...db.prepare("SELECT *, 'memories_store' as _table FROM memories_store WHERE created_at > ?").all(sinceTs),
+      ...db.prepare("SELECT *, 'app_settings' as _table FROM app_settings WHERE updated_at > ?").all(sinceTs),
+    ];
+    const records = [...deletedRecords, ...liveRecords];
 
     res.json({
       records,

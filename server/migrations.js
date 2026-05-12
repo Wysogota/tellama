@@ -76,7 +76,6 @@ export function runServerMigrations() {
     )
   `);
 
-  db.exec(`DROP TABLE IF EXISTS deleted_records`);
   db.exec(`
     CREATE TABLE IF NOT EXISTS deleted_records (
       id          TEXT NOT NULL,
