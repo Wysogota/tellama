@@ -50,7 +50,7 @@ const TagInput = ({ tags, onTagsChange, availableTags, placeholder, label }) => 
     <div className="mb-4" ref={containerRef}>
       <label className="block text-sm font-medium text-[var(--tg-hint-color)] mb-1">{label}</label>
       <div 
-        className="min-h-[42px] p-1.5 w-full bg-[var(--tg-secondary-bg-color)] border border-[var(--tg-border-color)] rounded-lg flex flex-wrap gap-1.5 focus-within:border-[var(--tg-link-color)] transition-colors cursor-text relative"
+        className="min-h-[42px] p-2 w-full bg-[var(--tg-search-bg)] rounded-xl flex flex-wrap gap-1.5 transition-all duration-200 focus-within:bg-[var(--tg-search-bg-focused)] focus-within:shadow-sm border-none cursor-text relative"
         onClick={() => inputRef.current?.focus()}
       >
         {tags.map((tag, index) => (

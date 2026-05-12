@@ -73,11 +73,11 @@ const PersonaModal = ({ onClose, editingPersonaId = null, isModal = false }) => 
 
   const content = (
     <div className={`w-full h-full bg-[var(--tg-bg-color)] flex flex-col ${isModal ? 'md:max-h-[90vh] md:rounded-xl shadow-2xl overflow-hidden' : ''}`}>
-      <div className="px-5 py-4 border-b border-[var(--tg-border-color)] flex items-center bg-[var(--tg-bg-color)] h-[60px] flex-shrink-0">
+      <div className="px-5 py-4 flex items-center bg-[var(--tg-bg-color)] h-[60px] flex-shrink-0">
         <button onClick={onClose} className="p-2 -ml-2 mr-2 hover:bg-[var(--tg-secondary-bg-color)] rounded-full transition-colors">
           <X size={24} className="text-[var(--tg-hint-color)]" />
         </button>
-        <h2 className="text-lg font-semibold truncate">{editingPersonaId ? 'Edit Personality' : 'New Persona'}</h2>
+        <h2 className="text-lg font-semibold truncate">{editingPersonaId ? 'Edit Persona' : 'New Persona'}</h2>
       </div>
       
       <div className="p-5 overflow-y-auto custom-scrollbar flex-grow bg-[var(--tg-bg-color)]">
@@ -96,14 +96,14 @@ const PersonaModal = ({ onClose, editingPersonaId = null, isModal = false }) => 
 
         <form id="persona-form" onSubmit={handleSubmit} className="space-y-4 mt-4">
           <div>
-            <label className="block text-sm font-medium text-[var(--tg-hint-color)] mb-1">Name / Title *</label>
+            <label className="block text-sm font-medium text-[var(--tg-hint-color)] mb-1">Name</label>
             <input 
               type="text" 
               required
               value={formData.name}
               onChange={(e) => setFormData({...formData, name: e.target.value})}
               placeholder="e.g. John, Assistant, Pirate Captain"
-              className="w-full bg-[var(--tg-secondary-bg-color)] text-[var(--tg-text-color)] border border-[var(--tg-border-color)] rounded-lg px-3 py-2 outline-none focus:border-[var(--tg-link-color)]"
+              className="w-full bg-[var(--tg-search-bg)] text-[var(--tg-text-color)] rounded-xl px-4 py-2.5 outline-none transition-all duration-200 focus:bg-[var(--tg-search-bg-focused)] focus:shadow-sm border-none"
             />
           </div>
 
@@ -113,7 +113,7 @@ const PersonaModal = ({ onClose, editingPersonaId = null, isModal = false }) => 
               <select 
                 value={formData.age}
                 onChange={(e) => setFormData({...formData, age: e.target.value})}
-                className="w-full bg-[var(--tg-secondary-bg-color)] text-[var(--tg-text-color)] border border-[var(--tg-border-color)] rounded-lg px-3 py-2 outline-none focus:border-[var(--tg-link-color)] appearance-none"
+                className="w-full bg-[var(--tg-search-bg)] text-[var(--tg-text-color)] rounded-xl px-4 py-2.5 outline-none transition-all duration-200 focus:bg-[var(--tg-search-bg-focused)] focus:shadow-sm border-none appearance-none"
               >
                 <option value="">Unknown</option>
                 {Array.from({ length: 86 }, (_, i) => i + 5).map(age => (
@@ -126,7 +126,7 @@ const PersonaModal = ({ onClose, editingPersonaId = null, isModal = false }) => 
               <select 
                 value={formData.gender}
                 onChange={(e) => setFormData({...formData, gender: e.target.value})}
-                className="w-full bg-[var(--tg-secondary-bg-color)] text-[var(--tg-text-color)] border border-[var(--tg-border-color)] rounded-lg px-3 py-2 outline-none focus:border-[var(--tg-link-color)] appearance-none"
+                className="w-full bg-[var(--tg-search-bg)] text-[var(--tg-text-color)] rounded-xl px-4 py-2.5 outline-none transition-all duration-200 focus:bg-[var(--tg-search-bg-focused)] focus:shadow-sm border-none appearance-none"
               >
                 <option value="">Not specified</option>
                 <option value="Male">Male</option>
@@ -143,7 +143,7 @@ const PersonaModal = ({ onClose, editingPersonaId = null, isModal = false }) => 
               onChange={(e) => setFormData({...formData, biography: e.target.value})}
               placeholder="Who is this character? What is their background?"
               rows={3}
-              className="w-full bg-[var(--tg-secondary-bg-color)] text-[var(--tg-text-color)] border border-[var(--tg-border-color)] rounded-lg px-3 py-2 outline-none focus:border-[var(--tg-link-color)] resize-y"
+              className="w-full bg-[var(--tg-search-bg)] text-[var(--tg-text-color)] rounded-xl px-4 py-2.5 outline-none transition-all duration-200 focus:bg-[var(--tg-search-bg-focused)] focus:shadow-sm border-none resize-y"
             />
           </div>
 
@@ -186,7 +186,7 @@ const PersonaModal = ({ onClose, editingPersonaId = null, isModal = false }) => 
             <select 
               value={formData.initiativeFrequency || 'never'}
               onChange={(e) => setFormData({...formData, initiativeFrequency: e.target.value})}
-              className="w-full bg-[var(--tg-secondary-bg-color)] text-[var(--tg-text-color)] border border-[var(--tg-border-color)] rounded-lg px-3 py-2 outline-none focus:border-[var(--tg-link-color)] appearance-none"
+              className="w-full bg-[var(--tg-search-bg)] text-[var(--tg-text-color)] rounded-xl px-4 py-2.5 outline-none transition-all duration-200 focus:bg-[var(--tg-search-bg-focused)] focus:shadow-sm border-none appearance-none"
             >
               <option value="never">Never</option>
               <option value="rare">Rarely</option>

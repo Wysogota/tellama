@@ -37,7 +37,7 @@ const Sidebar = ({ onOpenSettings, onOpenPersonasList, onOpenUserProfile }) => {
   };
 
   return (
-    <div className="w-full md:w-[320px] lg:w-[380px] bg-[var(--tg-sidebar-bg)] md:border-r border-[var(--tg-border-color)] flex flex-col h-full z-10 relative shadow-sm flex-shrink-0">
+    <div className="w-full md:w-[400px] lg:w-[450px] bg-[var(--tg-sidebar-bg)] md:border-r border-[var(--tg-border-color)] flex flex-col h-full z-10 relative shadow-sm flex-shrink-0">
       <div className="flex items-center px-2 md:px-4 border-b border-[var(--tg-border-color)] h-[60px] flex-shrink-0 bg-[var(--tg-bg-color)]">
         <button 
           onClick={onOpenSettings}

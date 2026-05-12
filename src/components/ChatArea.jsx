@@ -308,8 +308,8 @@ const ChatArea = ({ onOpenModelInfo }) => {
             </button>
             
             {isMenuOpen && (
-              <div className="absolute right-0 top-[100%] mt-2 w-64 bg-[var(--tg-bg-color)] border border-[var(--tg-border-color)] rounded-xl shadow-2xl overflow-hidden z-50 py-1 transition-all">
-                <button className="w-full flex items-center justify-between px-4 py-2.5 text-[var(--tg-text-color)] hover:bg-[var(--tg-secondary-bg-color)] transition-colors text-[15px] opacity-50 cursor-default">
+              <div className="absolute right-0 top-[100%] mt-2 w-64 bg-[var(--tg-search-bg)] border border-[var(--tg-border-color)] rounded-xl shadow-2xl overflow-hidden z-50 py-2 transition-all flex flex-col gap-1">
+                <button className="mx-1 flex items-center justify-between px-2 py-2 text-[var(--tg-text-color)] hover:bg-white/10 transition-colors rounded-xl text-[15px] opacity-50 cursor-default">
                   <div className="flex items-center gap-3">
                     <RotateCcw size={18} className="text-[var(--tg-hint-color)]" />
                     <span>Auto-delete</span>
@@ -317,14 +317,14 @@ const ChatArea = ({ onOpenModelInfo }) => {
                   <ChevronRight size={16} className="text-[var(--tg-hint-color)]" />
                 </button>
                 
-                <button className="w-full flex items-center gap-3 px-4 py-2.5 text-[var(--tg-text-color)] hover:bg-[var(--tg-secondary-bg-color)] transition-colors text-[15px] opacity-50 cursor-default">
+                <button className="mx-1 flex items-center gap-3 px-2 py-2 text-[var(--tg-text-color)] hover:bg-white/10 transition-colors rounded-xl text-[15px] opacity-50 cursor-default">
                   <CheckCheck size={18} className="text-[var(--tg-hint-color)]" />
                   <span>Select Messages</span>
                 </button>
 
                 <button 
                   onClick={handleDeleteChat}
-                  className="w-full flex items-center gap-3 px-4 py-2.5 text-red-500 hover:bg-red-500/5 transition-colors text-[15px]"
+                  className="mx-1 flex items-center gap-3 px-2 py-2 text-red-500 hover:bg-red-500/10 transition-colors rounded-xl text-[15px]"
                 >
                   <Trash2 size={18} />
                   <span>Delete Chat</span>
@@ -389,7 +389,7 @@ const ChatArea = ({ onOpenModelInfo }) => {
                   }
                 >
                   {/* Divider with padding */}
-                  <div className="mx-2 h-[1px] bg-[var(--tg-border-color)] opacity-50" />
+                  <div className="mx-1 h-[1px] bg-[var(--tg-border-color)] opacity-50" />
                   
                   {searchResults.length > 0 ? (
                     <div className="flex flex-col py-2 gap-1">
@@ -399,7 +399,7 @@ const ChatArea = ({ onOpenModelInfo }) => {
                           <div 
                             key={msg.id}
                             onClick={() => scrollToMessage(msg.id)}
-                            className="flex items-center mx-2 px-2 py-2 hover:bg-white/10 cursor-pointer transition-colors rounded-xl"
+                            className="flex items-center mx-1 px-2 py-2 hover:bg-white/10 cursor-pointer transition-colors rounded-xl"
                           >
                             <div className="w-10 h-10 rounded-full overflow-hidden bg-blue-500/20 flex-shrink-0 mr-3">
                               {sender?.avatar ? (
@@ -475,7 +475,7 @@ const ChatArea = ({ onOpenModelInfo }) => {
             <div key={msg.id} id={`msg-${msg.id}`} className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} group transition-colors duration-500 rounded-lg p-1`}>
 
               {isEditing ? (
-                <div className={`max-w-[75%] rounded-2xl p-3 shadow-sm bg-[var(--tg-secondary-bg-color)] border border-[var(--tg-link-color)] w-full`}>
+                <div className={`max-w-[75%] rounded-2xl p-3 shadow-sm bg-[var(--tg-secondary-bg-color)] border border-[var(--tg-link-color)]`}>
                   <textarea 
                     className="w-full bg-transparent text-[var(--tg-text-color)] outline-none resize-y min-h-[60px]"
                     value={editingText}
@@ -488,7 +488,7 @@ const ChatArea = ({ onOpenModelInfo }) => {
                   </div>
                 </div>
               ) : (
-                <div className={`flex flex-col gap-1 w-full max-w-[85%] ${isUser ? 'items-end' : 'items-start'}`}>
+                <div className={`flex flex-col gap-1 max-w-[65%] ${isUser ? 'items-end' : 'items-start'}`}>
                   {msg.content.split(/\n\s*\n/).filter(p => p.trim() !== '').map((paragraph, pIdx, arr) => {
                     const isFirst = pIdx === 0;
                     const isLast = pIdx === arr.length - 1;
@@ -591,7 +591,7 @@ const ChatArea = ({ onOpenModelInfo }) => {
         })}
         
         {displayIsGenerating && displayStreamingText && (
-          <div className="flex flex-col gap-1 w-full max-w-[85%] items-start self-start group">
+          <div className="flex flex-col gap-1 max-w-[80%] items-start self-start group">
             {displayStreamingText.split(/\n\s*\n/).map((paragraph, pIdx, arr) => (
               <div 
                 key={pIdx}
@@ -610,7 +610,7 @@ const ChatArea = ({ onOpenModelInfo }) => {
         
         {displayIsGenerating && !displayStreamingText && (
            <div className="flex justify-start">
-            <div className="max-w-[85%] rounded-[12px] px-4 py-2.5 shadow-sm bg-[var(--tg-chat-bubble-in)] text-[var(--tg-chat-bubble-in-text)] rounded-bl-[4px] flex items-center">
+            <div className="max-w-[80%] rounded-[12px] px-4 py-2.5 shadow-sm bg-[var(--tg-chat-bubble-in)] text-[var(--tg-chat-bubble-in-text)] rounded-bl-[4px] flex items-center">
               <Loader2 size={16} className="animate-spin text-[var(--tg-link-color)] mr-2" />
               <span className="text-[14px] text-[var(--tg-hint-color)]">Thinking...</span>
             </div>

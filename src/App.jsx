@@ -66,10 +66,10 @@ const MainApp = () => {
           max-md:fixed max-md:inset-0 max-md:z-[60] max-md:w-full
           ${showPersonaForm && editingPersonaId ? 'max-md:translate-y-0' : 'max-md:-translate-y-full'}
           md:relative md:border-l md:border-[var(--tg-border-color)]
-          ${showPersonaForm && editingPersonaId ? 'md:w-[320px] lg:w-[380px]' : 'md:w-0 md:border-none'}`}>
+          ${showPersonaForm && editingPersonaId ? 'md:w-[400px] lg:w-[450px]' : 'md:w-0 md:border-none'}`}>
           
           {showPersonaForm && editingPersonaId && (
-            <div className="w-full md:w-[320px] lg:w-[380px] h-full">
+            <div className="w-full md:w-[400px] lg:w-[450px] h-full">
               <PersonaModal 
                 isModal={false}
                 onClose={() => {

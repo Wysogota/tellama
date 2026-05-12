@@ -20,10 +20,14 @@ const ImageCropperModal = ({ imageSrc, onCropComplete, onClose }) => {
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
 
-      // Set target size for the avatar
-      const TARGET_SIZE = 150;
+      // Set target size for the avatar (balanced for quality and DB size)
+      const TARGET_SIZE = 400;
       canvas.width = TARGET_SIZE;
       canvas.height = TARGET_SIZE;
+
+      // Use high quality smoothing for the resize operation
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
 
       ctx.drawImage(
         image,
@@ -37,7 +41,8 @@ const ImageCropperModal = ({ imageSrc, onCropComplete, onClose }) => {
         TARGET_SIZE
       );
 
-      const base64Image = canvas.toDataURL('image/jpeg', 0.8);
+      // Use WEBP with 0.7 quality for aggressive but visually acceptable compression
+      const base64Image = canvas.toDataURL('image/webp', 0.7);
       onCropComplete(base64Image);
     } catch (e) {
       console.error(e);
