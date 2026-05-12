@@ -8,6 +8,15 @@ import * as sync from '../sync/SyncManager.js';
 
 const SERVER_URL = 'http://localhost:3001';
 
+const ACCENT_COLORS = {
+  blue: { light: '#5288c1', dark: '#7695ff' },
+  green: { light: '#5fb389', dark: '#74c399' },
+  orange: { light: '#d48b52', dark: '#e1a36f' },
+  red: { light: '#c46b6b', dark: '#d48282' },
+  pink: { light: '#c8759d', dark: '#d68eb0' },
+  indigo: { light: '#7d70b3', dark: '#9b8fc3' },
+};
+
 const AppContext = createContext();
 
 export const AppProvider = ({ children }) => {
@@ -18,11 +27,17 @@ export const AppProvider = ({ children }) => {
   const [activeChatId, setActiveChatId] = useState(null);
   const [messages, setMessages] = useState({});
   const [settings, setSettings] = useState(() => {
+    const defaultSettings = { 
+      host: 'http://localhost:8080', 
+      theme: 'light', 
+      accentColor: 'blue',
+      bgIntensity: 50 
+    };
     try {
       const ls = localStorage.getItem('tellama_settings');
-      return ls ? JSON.parse(ls) : { host: 'http://localhost:8080', theme: 'light' };
+      return ls ? { ...defaultSettings, ...JSON.parse(ls) } : defaultSettings;
     } catch (e) {
-      return { host: 'http://localhost:8080', theme: 'light' };
+      return defaultSettings;
     }
   });
   const [isLoading, setIsLoading] = useState(true);
@@ -286,12 +301,61 @@ export const AppProvider = ({ children }) => {
   // Settings persistence
   useEffect(() => {
     localStorage.setItem('tellama_settings', JSON.stringify(settings));
+    
+    // Theme
     if (settings.theme === 'dark') {
       document.documentElement.classList.add('dark');
     } else {
       document.documentElement.classList.remove('dark');
     }
+
+    // Accent Color
+    const colors = ACCENT_COLORS[settings.accentColor] || ACCENT_COLORS.blue;
+    const accentValue = settings.theme === 'dark' ? colors.dark : colors.light;
+    
+    document.documentElement.style.setProperty('--tg-link-color', accentValue);
+    document.documentElement.style.setProperty('--tg-button-color', accentValue);
+    document.documentElement.style.setProperty('--tg-sidebar-active', accentValue);
+    
+    // Derived colors for bubbles or highlights
+    const rgb = hexToRgb(accentValue);
+    document.documentElement.style.setProperty('--tg-accent-color-rgb', rgb);
+    
+    // Background Adaptation: Calculate a tinted background color
+    if (settings.theme === 'dark') {
+      // Deeper tint for dark mode
+      document.documentElement.style.setProperty('--tg-chat-bg', `rgba(${rgb}, 0.15)`);
+      document.documentElement.style.setProperty('--tg-bg-color', '#1c1c1c'); // Revert to original panel color
+      document.documentElement.style.setProperty('--tg-chat-bubble-out', accentValue);
+      document.documentElement.style.setProperty('--tg-chat-bubble-out-text', '#ffffff');
+    } else {
+      // Soft tint for light mode
+      document.documentElement.style.setProperty('--tg-chat-bg', `rgba(${rgb}, 0.12)`);
+      document.documentElement.style.setProperty('--tg-bg-color', '#ffffff');
+      
+      // Adaptive light bubble: very light version of accent
+      const lightBubble = getLightenedColor(rgb, 0.85);
+      document.documentElement.style.setProperty('--tg-chat-bubble-out', lightBubble);
+      document.documentElement.style.setProperty('--tg-chat-bubble-out-text', '#000000');
+    }
+    
+    // BG Intensity
+    document.documentElement.style.setProperty('--tg-bg-intensity', (settings.bgIntensity / 100).toString());
+
   }, [settings]);
+
+  const hexToRgb = (hex) => {
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    return result ? `${parseInt(result[1], 16)}, ${parseInt(result[2], 16)}, ${parseInt(result[3], 16)}` : '0, 0, 0';
+  };
+
+  const getLightenedColor = (rgbStr, amount) => {
+    const [r, g, b] = rgbStr.split(',').map(Number);
+    const nr = Math.round(r + (255 - r) * amount);
+    const ng = Math.round(g + (255 - g) * amount);
+    const nb = Math.round(b + (255 - b) * amount);
+    return `rgb(${nr}, ${ng}, ${nb})`;
+  };
 
   // Derived state: calculate all unique tags used across contacts
   const allTags = React.useMemo(() => {

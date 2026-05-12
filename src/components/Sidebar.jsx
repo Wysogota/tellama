@@ -65,7 +65,7 @@ const Sidebar = ({ onOpenSettings, onOpenPersonasList, onOpenUserProfile }) => {
       {activeUser && (
         <div 
           onClick={onOpenUserProfile}
-          className="flex items-center px-4 py-3 border-b border-[var(--tg-border-color)] bg-[var(--tg-secondary-bg-color)] cursor-pointer hover:bg-[var(--tg-sidebar-hover)] transition-all duration-200"
+          className="flex items-center px-4 py-3 bg-[var(--tg-secondary-bg-color)] cursor-pointer hover:bg-[var(--tg-sidebar-hover)] transition-all duration-200"
         >
           <div className="w-[42px] h-[42px] rounded-full overflow-hidden bg-gradient-to-br from-purple-400 to-purple-600 flex-shrink-0 flex items-center justify-center text-white font-semibold text-lg mr-3 shadow-sm border border-white/10">
             {activeUser.avatar ? (

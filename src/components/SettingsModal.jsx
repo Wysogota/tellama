@@ -62,6 +62,44 @@ const SettingsModal = ({ onClose }) => {
           </div>
 
           <div>
+            <label className="block text-sm font-medium text-[var(--tg-hint-color)] mb-3">Color Theme</label>
+            <div className="flex flex-wrap gap-3">
+              {[
+                { id: 'blue', color: '#5288c1' },
+                { id: 'green', color: '#5fb389' },
+                { id: 'orange', color: '#d48b52' },
+                { id: 'red', color: '#c46b6b' },
+                { id: 'pink', color: '#c8759d' },
+                { id: 'indigo', color: '#7d70b3' },
+              ].map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() => setLocalSettings({...localSettings, accentColor: c.id})}
+                  className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${localSettings.accentColor === c.id ? 'ring-4 ring-[var(--tg-link-color)] ring-offset-2 ring-offset-[var(--tg-bg-color)] scale-110' : 'hover:scale-105'}`}
+                  style={{ backgroundColor: c.color }}
+                >
+                  {localSettings.accentColor === c.id && <div className="w-2 h-2 bg-white rounded-full"></div>}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <div className="flex justify-between items-center mb-1">
+              <label className="block text-sm font-medium text-[var(--tg-hint-color)]">Background Intensity</label>
+              <span className="text-xs font-medium text-[var(--tg-hint-color)]">{localSettings.bgIntensity}%</span>
+            </div>
+            <input 
+              type="range" 
+              min="0" 
+              max="100" 
+              value={localSettings.bgIntensity}
+              onChange={(e) => setLocalSettings({...localSettings, bgIntensity: parseInt(e.target.value)})}
+              className="w-full h-1.5 bg-[var(--tg-secondary-bg-color)] rounded-lg appearance-none cursor-pointer accent-[var(--tg-link-color)]"
+            />
+          </div>
+
+          <div>
             <label className="block text-sm font-medium text-[var(--tg-hint-color)] mb-1">llama.cpp API Host & Port</label>
             <input 
               type="text" 

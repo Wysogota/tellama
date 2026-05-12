@@ -15,7 +15,7 @@ const MainApp = () => {
   const [showUserProfile, setShowUserProfile] = useState(false);
   const [editingPersonaId, setEditingPersonaId] = useState(null);
   
-  const { activeChatId, chatSessions } = useAppContext();
+  const { activeChatId, chatSessions, settings } = useAppContext();
 
   const handleOpenModelInfo = () => {
     if (activeChatId) {
@@ -56,7 +56,15 @@ const MainApp = () => {
       
       <div className={`${activeChatId ? 'block w-full md:w-auto' : 'hidden md:block'} h-full flex-grow flex min-w-0 relative bg-[var(--tg-chat-bg)]`}>
         {/* Static Background Layer */}
-        <div className="absolute inset-0 bg-cover bg-center bg-no-repeat pointer-events-none" style={{ backgroundImage: 'var(--tg-chat-bg-image)' }}></div>
+        <div 
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat pointer-events-none transition-all duration-500" 
+          style={{ 
+            backgroundImage: 'var(--tg-chat-bg-image)', 
+            backgroundColor: 'var(--tg-chat-bg)',
+            backgroundBlendMode: settings.theme === 'dark' ? 'soft-light' : 'overlay',
+            opacity: 'var(--tg-bg-intensity)' 
+          }}
+        ></div>
         
         <div className="flex-grow h-full min-w-0 overflow-hidden relative z-10">
           <ChatArea onOpenModelInfo={handleOpenModelInfo} />
