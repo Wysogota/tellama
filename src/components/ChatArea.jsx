@@ -203,12 +203,17 @@ const ChatArea = ({ onOpenModelInfo }) => {
   const [isSearchActive, setIsSearchActive] = useState(false);
   const [chatSearchQuery, setChatSearchQuery] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [showSearchResults, setShowSearchResults] = useState(true);
   const menuRef = useRef(null);
+  const searchContainerRef = useRef(null);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (menuRef.current && !menuRef.current.contains(event.target)) {
         setIsMenuOpen(false);
+      }
+      if (searchContainerRef.current && !searchContainerRef.current.contains(event.target)) {
+        setShowSearchResults(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -352,8 +357,8 @@ const ChatArea = ({ onOpenModelInfo }) => {
               </div>
               
               {/* Search Capsule - Height matched to avatar (40px) */}
-              <div className="flex-grow flex items-center h-full">
-                <div className={`flex-grow flex items-center h-[40px] rounded-full px-4 transition-all duration-200 ${isSearchFocused ? 'bg-[var(--tg-search-bg-focused)] shadow-[0_2px_8px_rgba(0,0,0,0.2)]' : 'bg-[var(--tg-search-bg)]'}`}>
+              <div className="flex-grow flex items-center h-full relative" ref={searchContainerRef}>
+                <div className={`flex-grow flex items-center h-[40px] px-4 transition-all duration-200 ${isSearchFocused ? 'bg-[var(--tg-search-bg-focused)] shadow-[0_2px_8px_rgba(0,0,0,0.2)]' : 'bg-[var(--tg-search-bg)]'} ${chatSearchQuery.trim() && showSearchResults ? 'rounded-t-[20px]' : 'rounded-full'}`}>
                   <Search size={18} className="mr-3 text-[var(--tg-hint-color)] flex-shrink-0" />
                   <input 
                     autoFocus
@@ -361,10 +366,70 @@ const ChatArea = ({ onOpenModelInfo }) => {
                     className="flex-grow bg-transparent text-[var(--tg-text-color)] text-[16px] outline-none caret-[var(--tg-link-color)]"
                     placeholder="Search"
                     value={chatSearchQuery}
-                    onChange={(e) => setChatSearchQuery(e.target.value)}
-                    onFocus={() => setIsSearchFocused(true)}
+                    onChange={(e) => {
+                      setChatSearchQuery(e.target.value);
+                      setShowSearchResults(true);
+                    }}
+                    onFocus={() => {
+                      setIsSearchFocused(true);
+                      setShowSearchResults(true);
+                    }}
                     onBlur={() => setIsSearchFocused(false)}
                   />
+                </div>
+
+                {/* Search Results Dropdown - Merged with capsule with animations */}
+                <div 
+                  className={`absolute top-[50px] left-0 right-0 max-h-[400px] overflow-y-auto shadow-2xl rounded-b-2xl z-50 custom-scrollbar transition-all duration-300 origin-top
+                    ${chatSearchQuery.trim() && showSearchResults 
+                      ? 'opacity-100 scale-y-100 pointer-events-auto' 
+                      : 'opacity-0 scale-y-0 pointer-events-none'
+                    } 
+                    ${isSearchFocused ? 'bg-[var(--tg-search-bg-focused)]' : 'bg-[var(--tg-search-bg)]'}`
+                  }
+                >
+                  {/* Divider with padding */}
+                  <div className="mx-2 h-[1px] bg-[var(--tg-border-color)] opacity-50" />
+                  
+                  {searchResults.length > 0 ? (
+                    <div className="flex flex-col py-2 gap-1">
+                      {searchResults.map((msg) => {
+                        const sender = msg.sender === 'user' ? activeUser : activePersona;
+                        return (
+                          <div 
+                            key={msg.id}
+                            onClick={() => scrollToMessage(msg.id)}
+                            className="flex items-center mx-2 px-2 py-2 hover:bg-white/10 cursor-pointer transition-colors rounded-xl"
+                          >
+                            <div className="w-10 h-10 rounded-full overflow-hidden bg-blue-500/20 flex-shrink-0 mr-3">
+                              {sender?.avatar ? (
+                                <img src={sender.avatar} className="w-full h-full object-cover" />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center text-blue-500 font-bold">
+                                  {sender?.name?.charAt(0).toUpperCase()}
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex-grow min-w-0">
+                              <div className="flex justify-between items-baseline">
+                                <span className="font-semibold text-[15px] truncate text-[var(--tg-text-color)]">{sender?.name}</span>
+                                <span className="text-[12px] text-[var(--tg-hint-color)] ml-2 flex-shrink-0">
+                                  {new Date(msg.timestamp).toLocaleDateString()}
+                                </span>
+                              </div>
+                              <p className="text-[14px] text-[var(--tg-hint-color)] truncate">
+                                {msg.content}
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="p-8 text-center text-[var(--tg-hint-color)]">
+                      No results found for "{chatSearchQuery}"
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -382,49 +447,6 @@ const ChatArea = ({ onOpenModelInfo }) => {
               </div>
             </div>
             
-            {chatSearchQuery.trim() && (
-              <div className="absolute top-[60px] left-0 right-0 max-h-[400px] overflow-y-auto bg-[var(--tg-bg-color)] shadow-2xl border-b border-[var(--tg-border-color)] z-50 custom-scrollbar">
-                {searchResults.length > 0 ? (
-                  <div className="flex flex-col">
-                    {searchResults.map((msg) => {
-                      const sender = msg.sender === 'user' ? activeUser : activePersona;
-                      return (
-                        <div 
-                          key={msg.id}
-                          onClick={() => scrollToMessage(msg.id)}
-                          className="flex items-center px-4 py-3 hover:bg-[var(--tg-secondary-bg-color)] cursor-pointer transition-colors border-b border-[var(--tg-border-color)] last:border-0"
-                        >
-                          <div className="w-10 h-10 rounded-full overflow-hidden bg-blue-500/20 flex-shrink-0 mr-3">
-                            {sender?.avatar ? (
-                              <img src={sender.avatar} className="w-full h-full object-cover" />
-                            ) : (
-                              <div className="w-full h-full flex items-center justify-center text-blue-500 font-bold">
-                                {sender?.name?.charAt(0).toUpperCase()}
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex-grow min-w-0">
-                            <div className="flex justify-between items-baseline">
-                              <span className="font-semibold text-[15px] truncate">{sender?.name}</span>
-                              <span className="text-[12px] text-[var(--tg-hint-color)] ml-2 flex-shrink-0">
-                                {new Date(msg.timestamp).toLocaleDateString()}
-                              </span>
-                            </div>
-                            <p className="text-[14px] text-[var(--tg-hint-color)] truncate">
-                              {msg.content}
-                            </p>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="p-8 text-center text-[var(--tg-hint-color)]">
-                    No results found for "{chatSearchQuery}"
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         )}
       </div>
