@@ -67,8 +67,8 @@ const MainApp = () => {
         <div className={`h-full flex-shrink-0 bg-[var(--tg-bg-color)] transition-all duration-300 ease-in-out overflow-hidden
           max-md:fixed max-md:inset-0 max-md:z-[60] max-md:w-full
           ${showPersonaForm && editingPersonaId ? 'max-md:translate-y-0' : 'max-md:-translate-y-full'}
-          md:relative md:border-l md:border-[var(--tg-border-color)]
-          ${showPersonaForm && editingPersonaId ? 'md:w-[400px] lg:w-[450px]' : 'md:w-0 md:border-none'}`}>
+          md:relative
+          ${showPersonaForm && editingPersonaId ? 'md:w-[400px] lg:w-[450px]' : 'md:w-0'}`}>
           
           {showPersonaForm && editingPersonaId && (
             <div className="w-full md:w-[400px] lg:w-[450px] h-full">

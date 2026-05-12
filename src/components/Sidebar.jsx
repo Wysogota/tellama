@@ -61,7 +61,7 @@ const Sidebar = ({ onEditPersona }) => {
   };
 
   return (
-    <div className="w-full md:w-[400px] lg:w-[450px] bg-[var(--tg-sidebar-bg)] md:border-r border-[var(--tg-border-color)] flex flex-col h-full z-10 relative shadow-sm flex-shrink-0 overflow-hidden">
+    <div className="w-full md:w-[400px] lg:w-[450px] bg-[var(--tg-sidebar-bg)] flex flex-col h-full z-10 relative shadow-sm flex-shrink-0 overflow-hidden">
       
       <div className={`sidebar-view-container h-full view-${view}`}>
         
@@ -77,7 +77,7 @@ const Sidebar = ({ onEditPersona }) => {
               </button>
 
               {isMenuOpen && (
-                <div className="absolute left-0 top-[100%] mt-2 w-[280px] bg-[var(--tg-bg-color)] border border-[var(--tg-border-color)] rounded-2xl shadow-2xl overflow-hidden z-[100] py-2 transition-all flex flex-col">
+                <div className="absolute left-0 top-[100%] mt-2 w-[280px] bg-[var(--tg-bg-color)] border border-[var(--tg-border-color)] rounded-2xl shadow-2xl overflow-hidden z-[100] py-2 transition-all flex flex-col gap-1">
                   {/* Profile Selection */}
                   <div className="px-2 mb-1">
                     {userProfiles.map(profile => (

@@ -55,7 +55,6 @@ const ChatArea = ({ onOpenModelInfo }) => {
     const lastTs = botMessages[botMessages.length - 1].timestamp;
     const diff = Date.now() - lastTs;
     const mins = Math.floor(diff / 60000);
-    const hours = Math.floor(diff / 3600000);
     if (mins < 1) return 'last seen just now';
     if (mins < 60) return `last seen ${mins} min ago`;
     const date = new Date(lastTs);
@@ -168,7 +167,7 @@ const ChatArea = ({ onOpenModelInfo }) => {
     }
 
     // Branching: Create a new message as a child of msg.parentId
-    const newMsgId = addMessage(activeChatId, { sender: msg.sender, content: editingText }, msg.parentId);
+    const newMsgId = await addMessage(activeChatId, { sender: msg.sender, content: editingText }, msg.parentId);
     setEditingMessageId(null);
 
     // If it's a user message, we need to generate a new bot response
@@ -178,12 +177,11 @@ const ChatArea = ({ onOpenModelInfo }) => {
       while (curr && chatData.nodes[curr]) {
         const node = chatData.nodes[curr];
         historyToPass.push(node);
-        if (curr === newMsgId) break; // This should be in the path since we just added it and it became active
+        if (curr === newMsgId) break; 
         const activeIdx = chatData.activeChildIndex[curr] || 0;
         curr = node.childrenIds[activeIdx];
       }
       
-      // In case the loop didn't catch it (since newMsgId might not be in the memoized activeMessages yet)
       if (historyToPass.length === 0 || historyToPass[historyToPass.length - 1].id !== newMsgId) {
         historyToPass.push({ sender: 'user', content: editingText });
       }
@@ -222,8 +220,8 @@ const ChatArea = ({ onOpenModelInfo }) => {
 
   if (!activeChatId || !activePersona) {
     return (
-      <div className="flex-grow flex flex-col h-full bg-[var(--tg-chat-bg)] relative overflow-hidden">
-        <div className="h-[60px] w-full bg-[var(--tg-bg-color)] border-b border-[var(--tg-border-color)] flex-shrink-0 z-10"></div>
+      <div className="flex-grow flex flex-col h-full bg-transparent relative overflow-hidden">
+        <div className="h-[60px] w-full bg-[var(--tg-bg-color)] flex-shrink-0 z-10 md:border-l md:border-r border-[var(--tg-border-color)]"></div>
         <div className="flex-grow flex items-center justify-center relative">
           <div className="absolute inset-0 bg-cover bg-center bg-no-repeat" style={{ backgroundImage: 'var(--tg-chat-bg-image)' }}></div>
           <div className="absolute inset-0 opacity-[0.05] pointer-events-none" style={{ backgroundSize: '400px' }}></div>
@@ -247,7 +245,6 @@ const ChatArea = ({ onOpenModelInfo }) => {
     const element = document.getElementById(`msg-${id}`);
     if (element) {
       element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      // Add a brief highlight effect
       element.classList.add('bg-blue-500/10');
       setTimeout(() => element.classList.remove('bg-blue-500/10'), 2000);
     }
@@ -261,18 +258,17 @@ const ChatArea = ({ onOpenModelInfo }) => {
 
   return (
     <div className="flex-grow flex flex-col h-full bg-transparent relative overflow-hidden">
-      {/* Background moved to App.jsx to keep it static */}
       <div className="absolute inset-0 opacity-[0.05] pointer-events-none" style={{ backgroundSize: '400px' }}></div>
       
       {/* Header */}
-      <div className="h-[60px] flex-shrink-0 bg-[var(--tg-bg-color)] border-b border-[var(--tg-border-color)] flex items-center px-2 md:px-4 z-30 transition-colors shadow-sm relative">
+      <div className="h-[60px] flex-shrink-0 bg-[var(--tg-bg-color)] flex items-center px-2 md:px-4 z-30 transition-colors relative md:border-l md:border-r border-[var(--tg-border-color)]">
         <button 
           onClick={() => setActiveChatId(null)}
-          className="md:hidden p-2 mr-1 text-[var(--tg-hint-color)] hover:bg-[var(--tg-secondary-bg-color)] rounded-full transition-colors"
+          className="md:hidden p-2 mr-1 text-[var(--tg-hint-color)] hover:bg-[var(--tg-secondary-bg-color)] rounded-full transition-colors flex-shrink-0"
         >
           <ArrowLeft size={24} />
         </button>
-        <div className="flex-grow flex items-center cursor-pointer overflow-hidden p-1 rounded-lg" onClick={onOpenModelInfo}>
+        <div className="flex-grow flex items-center cursor-pointer overflow-hidden p-1 rounded-lg min-w-0" onClick={onOpenModelInfo}>
           <div className="w-10 h-10 rounded-full overflow-hidden bg-gradient-to-br from-blue-400 to-blue-600 flex-shrink-0 flex items-center justify-center text-white font-semibold text-lg mr-3 shadow-sm">
             {activePersona.avatar ? (
               <img src={activePersona.avatar} className="w-full h-full object-cover" />
@@ -280,10 +276,10 @@ const ChatArea = ({ onOpenModelInfo }) => {
               activePersona.name.charAt(0).toUpperCase()
             )}
           </div>
-          <div className="flex flex-col flex-grow">
-            <h2 className="font-semibold text-[var(--tg-text-color)] text-[16px] leading-tight">{activePersona.name}</h2>
+          <div className="flex flex-col flex-grow min-w-0">
+            <h2 className="font-semibold text-[var(--tg-text-color)] text-[16px] leading-tight truncate">{activePersona.name}</h2>
             <span 
-              className="text-[13px] font-medium transition-colors duration-300" 
+              className="text-[13px] font-medium transition-colors duration-300 truncate" 
               style={{ color: (displayIsGenerating || statusOverride === 'online') ? 'var(--tg-link-color)' : 'var(--tg-status-color)' }}
             >
               {displayIsGenerating ? 'typing...' : (statusOverride === 'online' ? 'online' : lastSeenStatus)}
@@ -291,7 +287,7 @@ const ChatArea = ({ onOpenModelInfo }) => {
           </div>
         </div>
         
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 flex-shrink-0 ml-1">
           <button 
             onClick={() => setIsSearchActive(!isSearchActive)}
             className={`p-2 rounded-full transition-colors ${isSearchActive ? 'bg-[var(--tg-secondary-bg-color)] text-[var(--tg-link-color)]' : 'text-[var(--tg-hint-color)] hover:bg-[var(--tg-secondary-bg-color)]'}`}
@@ -337,33 +333,28 @@ const ChatArea = ({ onOpenModelInfo }) => {
         {/* Search Bar Overlay */}
         {isSearchActive && (
           <div className="absolute inset-0 bg-[var(--tg-bg-color)] z-40 flex flex-col animate-in fade-in duration-200">
-            <div className="h-[60px] flex items-center px-2 md:px-4 flex-shrink-0">
-              {/* Mirror back button placeholder to match mobile layout shift */}
-              <button className="md:hidden p-2 mr-1 opacity-0 pointer-events-none">
+            <div className="h-[60px] flex items-center px-2 md:px-4 flex-shrink-0 md:border-l md:border-r border-[var(--tg-border-color)]">
+              <button className="md:hidden p-2 mr-1 opacity-0 pointer-events-none flex-shrink-0">
                 <ArrowLeft size={24} />
               </button>
 
-              {/* Avatar - Wrapped in p-1 to match normal header's info container padding */}
-              <div className="p-1 flex items-center mr-2">
-                <div className="w-10 h-10 rounded-full overflow-hidden bg-blue-500/20 flex-shrink-0">
+              <div className="p-1 flex items-center mr-2 flex-shrink-0">
+                <div className="w-10 h-10 rounded-full overflow-hidden bg-gradient-to-br from-blue-400 to-blue-600 flex-shrink-0 flex items-center justify-center text-white font-semibold text-lg shadow-sm">
                   {activePersona.avatar ? (
                     <img src={activePersona.avatar} className="w-full h-full object-cover" />
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center text-blue-500 font-bold text-lg">
-                      {activePersona.name.charAt(0).toUpperCase()}
-                    </div>
+                    activePersona.name.charAt(0).toUpperCase()
                   )}
                 </div>
               </div>
               
-              {/* Search Capsule - Height matched to avatar (40px) */}
-              <div className="flex-grow flex items-center h-full relative" ref={searchContainerRef}>
-                <div className={`flex-grow flex items-center h-[40px] px-4 transition-all duration-200 ${isSearchFocused ? 'bg-[var(--tg-search-bg-focused)] shadow-[0_2px_8px_rgba(0,0,0,0.2)]' : 'bg-[var(--tg-search-bg)]'} ${chatSearchQuery.trim() && showSearchResults ? 'rounded-t-[20px]' : 'rounded-full'}`}>
+              <div className="flex-grow flex items-center h-full relative min-w-0" ref={searchContainerRef}>
+                <div className={`flex-grow flex items-center h-[40px] px-4 transition-all duration-200 min-w-0 ${isSearchFocused ? 'bg-[var(--tg-search-bg-focused)] shadow-[0_2px_8px_rgba(0,0,0,0.2)]' : 'bg-[var(--tg-search-bg)]'} ${chatSearchQuery.trim() && showSearchResults ? 'rounded-t-[20px]' : 'rounded-full'}`}>
                   <Search size={18} className="mr-3 text-[var(--tg-hint-color)] flex-shrink-0" />
                   <input 
                     autoFocus
                     type="text"
-                    className="flex-grow bg-transparent text-[var(--tg-text-color)] text-[16px] outline-none caret-[var(--tg-link-color)]"
+                    className="flex-grow bg-transparent text-[var(--tg-text-color)] text-[16px] outline-none caret-[var(--tg-link-color)] min-w-0"
                     placeholder="Search"
                     value={chatSearchQuery}
                     onChange={(e) => {
@@ -378,7 +369,6 @@ const ChatArea = ({ onOpenModelInfo }) => {
                   />
                 </div>
 
-                {/* Search Results Dropdown - Merged with capsule with animations */}
                 <div 
                   className={`absolute top-[50px] left-0 right-0 max-h-[400px] overflow-y-auto shadow-2xl rounded-b-2xl z-50 custom-scrollbar transition-all duration-300 origin-top
                     ${chatSearchQuery.trim() && showSearchResults 
@@ -388,7 +378,6 @@ const ChatArea = ({ onOpenModelInfo }) => {
                     ${isSearchFocused ? 'bg-[var(--tg-search-bg-focused)]' : 'bg-[var(--tg-search-bg)]'}`
                   }
                 >
-                  {/* Divider with padding */}
                   <div className="mx-1 h-[1px] bg-[var(--tg-border-color)] opacity-50" />
                   
                   {searchResults.length > 0 ? (
@@ -433,8 +422,7 @@ const ChatArea = ({ onOpenModelInfo }) => {
                 </div>
               </div>
 
-              {/* Action buttons - Perfectly mirrored positions */}
-              <div className="flex items-center gap-1 ml-2">
+              <div className="flex items-center gap-1 ml-2 flex-shrink-0">
                 <button 
                   onClick={() => { setIsSearchActive(false); setChatSearchQuery(''); }}
                   className="p-2 text-[var(--tg-hint-color)] hover:bg-[var(--tg-secondary-bg-color)] rounded-full transition-colors"
@@ -458,15 +446,11 @@ const ChatArea = ({ onOpenModelInfo }) => {
           const isUser = msg.sender === 'user';
           const isEditing = editingMessageId === msg.id;
           
-          // Compute sibling info for branching UI
           let siblings = [];
           let currentVariantIndex = 0;
           if (msg.parentId && chatData.nodes[msg.parentId]) {
             siblings = chatData.nodes[msg.parentId].childrenIds;
             currentVariantIndex = chatData.activeChildIndex[msg.parentId] || 0;
-          } else if (msg.parentId === null && chatData.rootId) {
-            // Root variations logic if we ever support multiple roots, currently single root assumption 
-            // but let's keep it simple: no branch UI for root.
           }
 
           const hasVariants = siblings.length > 1;
@@ -495,14 +479,8 @@ const ChatArea = ({ onOpenModelInfo }) => {
                     
                     let borderRadius = '';
                     if (isUser) {
-                      // Outgoing: Top-left and Bottom-left are always 18px
-                      // Top-right is 18px ONLY if it's the first paragraph
-                      // Bottom-right is ALWAYS 6px (last one gets tail overlay)
                       borderRadius = `18px ${isFirst ? '18px' : '6px'} 6px 18px`;
                     } else {
-                      // Incoming: Top-right and Bottom-right are always 18px
-                      // Top-left is 18px ONLY if it's the first paragraph
-                      // Bottom-left is ALWAYS 6px
                       borderRadius = `${isFirst ? '18px' : '6px'} 18px 18px 6px`;
                     }
 
@@ -623,7 +601,6 @@ const ChatArea = ({ onOpenModelInfo }) => {
       {/* Input */}
       <div className="p-2 md:p-4 md:pb-6 z-10 flex justify-center bg-transparent">
         <div className="flex items-end w-full max-w-[720px] gap-2">
-          {/* Main Input Capsule */}
           <div className="flex-grow flex items-end bg-[var(--tg-secondary-bg-color)] rounded-[24px] shadow-md px-2 py-1 min-h-[50px]">
             <button className="p-3 text-[var(--tg-hint-color)] hover:text-[var(--tg-link-color)] transition-colors">
               <Smile size={24} />
@@ -647,7 +624,6 @@ const ChatArea = ({ onOpenModelInfo }) => {
             </button>
           </div>
 
-          {/* Action Button (Mic/Send) */}
           <div className="flex-shrink-0 mb-0.5">
             {inputText.trim() ? (
               <button 
