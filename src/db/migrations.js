@@ -113,8 +113,14 @@ export async function runMigrations() {
   await db.exec(`CREATE INDEX IF NOT EXISTS idx_deleted_pending    ON deleted_records(sync_status) WHERE sync_status = 'pending'`);
 
   try {
-    await db.exec(`ALTER TABLE messages ADD COLUMN metadata TEXT DEFAULT '{}'`);
-  } catch (e) {}
+    const tableInfo = await db.query("PRAGMA table_info(messages)");
+    const hasMetadata = tableInfo.rows.some(col => col.name === 'metadata');
+    if (!hasMetadata) {
+      await db.exec(`ALTER TABLE messages ADD COLUMN metadata TEXT DEFAULT '{}'`);
+    }
+  } catch (e) {
+    console.warn('[Migrations] Metadata column check/add failed:', e.message);
+  }
 
   console.log('[Migrations] All tables created/verified');
 }

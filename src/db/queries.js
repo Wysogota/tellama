@@ -448,3 +448,17 @@ async function logDeletion(id, table_name) {
     [id, table_name, t]
   );
 }
+export async function applyMessageFromServer(msg) {
+  if (await isTombstoned(msg.id, 'messages')) {
+    console.log(`[queries] applyMessageFromServer: skipping tombstoned message ${msg.id}`);
+    return;
+  }
+  const metadata = typeof msg.metadata === 'string' ? msg.metadata : JSON.stringify(msg.stats || msg.metadata || {});
+  await db.exec(
+    `INSERT INTO messages (id, session_id, role, content, parent_message_id, created_at, updated_at, metadata, sync_status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'synced')
+     ON CONFLICT(id) DO UPDATE SET content=excluded.content, updated_at=excluded.updated_at, metadata=excluded.metadata, sync_status='synced'
+     WHERE excluded.updated_at > messages.updated_at`,
+    [msg.id, msg.sessionId, msg.sender === 'user' ? 'user' : 'assistant', msg.content, msg.parentId ?? null, msg.timestamp, msg.updatedAt || msg.timestamp, metadata]
+  );
+}

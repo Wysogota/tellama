@@ -28,6 +28,8 @@ const ChatArea = ({ onOpenModelInfo }) => {
   const activeUser = userProfiles.find(p => p.id === activeUserProfileId) || userProfiles[0];
   const chatData = messages[activeChatId];
 
+
+
   // Compute linear path
   const activeMessages = React.useMemo(() => {
     if (!chatData || !chatData.rootId) return [];
@@ -88,6 +90,14 @@ const ChatArea = ({ onOpenModelInfo }) => {
     if (date.toDateString() === yesterday.toDateString()) return `last seen yesterday at ${timeStr}`;
     return `last seen ${date.toLocaleDateString([], { day: 'numeric', month: 'short' })} at ${timeStr}`;
   }, [activeMessages]);
+
+  if (!activePersona) {
+    return (
+      <div className="flex-grow flex items-center justify-center h-full bg-[var(--tg-bg-color)] text-[var(--tg-hint-color)]">
+        <p className="px-4 py-2 bg-[var(--tg-secondary-bg-color)] rounded-full text-[14px]">Select a chat to start messaging</p>
+      </div>
+    );
+  }
 
   const startGeneration = async (historyToPass, parentNodeId) => {
     setIsGenerating(true);

@@ -66,89 +66,73 @@ export const AppProvider = ({ children }) => {
         let personas = await queries.getAllPersonas();
         console.log('[Init] SQLite profiles:', profiles.length, '| personas:', personas.length);
 
-        // Fallback: if SQLite is empty (in-memory mode after refresh or first run)
-        if (profiles.length === 0) {
-          const lsProfiles = JSON.parse(localStorage.getItem('tellama_user_profiles') || '[]');
-          const lsActiveUser = localStorage.getItem('tellama_active_user');
-          console.log('[Init] Profiles fallback — lsProfiles:', lsProfiles.length);
-
-          if (lsProfiles.length > 0) {
-            for (const p of lsProfiles) {
-              try {
-                // Check tombstone before restoring from localStorage
-                const { rows: tombRows } = await db.query(
-                  "SELECT 1 FROM deleted_records WHERE id = ? AND table_name = 'user_profiles'",
-                  [p.id]
-                );
-                if (tombRows.length > 0) {
-                  console.log('[Init] Skipping tombstoned profile from localStorage:', p.id);
-                  continue;
-                }
-                await queries.upsertProfile({ ...p, updatedAt: 1 });
-              } catch(e) { console.warn('upsertProfile failed:', e.message); }
+        // ALWAYS check localStorage to recover from in-memory SQLite fallbacks
+        const lsProfiles = JSON.parse(localStorage.getItem('tellama_user_profiles') || '[]');
+        const lsActiveUser = localStorage.getItem('tellama_active_user');
+        for (const p of lsProfiles) {
+          if (!profiles.find(dbP => dbP.id === p.id)) {
+            const { rows: tombRows } = await db.query("SELECT 1 FROM deleted_records WHERE id = ? AND table_name = 'user_profiles'", [p.id]);
+            if (tombRows.length === 0) {
+              await queries.upsertProfile({ ...p, updatedAt: 1 }).catch(() => {});
             }
-            // Re-read after filtering tombstoned entries
-            profiles = await queries.getAllProfiles();
-            if (lsActiveUser) await queries.setSyncMeta('active_user_id', lsActiveUser).catch(() => {});
           }
-          // If still empty after filtering tombstones — create a default profile
-          if (profiles.length === 0) {
-            const defaultProfile = { id: uuidv4(), name: 'User', biography: '', age: '', gender: '', avatar: null, createdAt: Date.now() };
-            await queries.upsertProfile(defaultProfile);
-            profiles = [defaultProfile];
-            console.log('[Init] Created default profile');
+        }
+        
+        if (profiles.length === 0 && lsProfiles.length === 0) {
+          const defaultProfile = { id: uuidv4(), name: 'User', biography: '', age: '', gender: '', avatar: null, createdAt: Date.now() };
+          await queries.upsertProfile(defaultProfile);
+        }
+
+        const lsContacts = JSON.parse(localStorage.getItem('tellama_contacts') || '[]');
+        for (const c of lsContacts) {
+          if (!personas.find(dbC => dbC.id === c.id)) {
+            const { rows: tombRows } = await db.query("SELECT 1 FROM deleted_records WHERE id = ? AND table_name = 'personas'", [c.id]);
+            if (tombRows.length === 0) {
+              await queries.upsertPersona({ ...c, updatedAt: 1 }).catch(() => {});
+            }
           }
         }
 
-        if (personas.length === 0) {
-          const lsContacts = JSON.parse(localStorage.getItem('tellama_contacts') || '[]');
-          const lsMessages = JSON.parse(localStorage.getItem('tellama_messages') || '{}');
-          const profileId = localStorage.getItem('tellama_active_user') || profiles[0]?.id;
-          console.log('[Init] Personas fallback — lsContacts:', lsContacts.length, '| profileId:', profileId);
-
-          if (lsContacts.length > 0) {
-            for (const c of lsContacts) {
-              try {
-                // Check tombstone before restoring from localStorage
-                const { rows: tombRows } = await db.query(
-                  "SELECT 1 FROM deleted_records WHERE id = ? AND table_name = 'personas'",
-                  [c.id]
-                );
-                if (tombRows.length > 0) {
-                  console.log('[Init] Skipping tombstoned persona from localStorage:', c.id);
-                  continue;
-                }
-                await queries.upsertPersona({ ...c, updatedAt: 1 });
-              } catch(e) { console.warn('upsertPersona failed:', e.message); }
+        const lsSessions = JSON.parse(localStorage.getItem('tellama_chat_sessions') || '[]');
+        let sessions = await queries.getAllSessions();
+        for (const s of lsSessions) {
+          if (!sessions.find(dbS => dbS.id === s.id)) {
+            const { rows: tombRows } = await db.query("SELECT 1 FROM deleted_records WHERE id = ? AND table_name = 'chat_sessions'", [s.id]);
+            if (tombRows.length === 0) {
+              await queries.upsertSession({ 
+                id: s.id, 
+                userProfileId: s.user_profile_id, 
+                personaId: s.persona_id, 
+                createdAt: s.created_at, 
+                updatedAt: s.updated_at || 1 
+              }).catch(() => {});
             }
-            // Import legacy messages for non-tombstoned personas
-            for (const [personaId, chatData] of Object.entries(lsMessages)) {
-              // Check tombstone for sessions too
-              const { rows: tombRows } = await db.query(
-                "SELECT 1 FROM deleted_records WHERE id = ? AND table_name = 'chat_sessions'",
-                [personaId]
-              ).catch(() => ({ rows: [] }));
-              if (tombRows.length > 0) continue;
+          }
+        }
 
-              if (chatData?.nodes && Object.keys(chatData.nodes).length > 0) {
-                try {
-                  await queries.upsertSession({ id: personaId, userProfileId: profileId, personaId: personaId, createdAt: 1, updatedAt: 1 });
-                } catch(e) {}
-                for (const node of Object.values(chatData.nodes)) {
-                  try { await queries.insertMessage({ ...node, sessionId: personaId, timestamp: node.timestamp || 1 }); } catch(e) {}
-                }
-                for (const [parentKey, idx] of Object.entries(chatData.activeChildIndex || {})) {
-                  try { await queries.upsertBranchState(personaId, parentKey === 'null' ? null : parentKey, idx); } catch(e) {}
-                }
+        const lsMessages = JSON.parse(localStorage.getItem('tellama_messages') || '{}');
+        const profileId = lsActiveUser || profiles[0]?.id || uuidv4();
+        for (const [personaId, chatData] of Object.entries(lsMessages)) {
+          if (!sessions.find(dbS => dbS.id === personaId) && !lsSessions.find(s => s.id === personaId)) {
+            const { rows: tombRows } = await db.query("SELECT 1 FROM deleted_records WHERE id = ? AND table_name = 'chat_sessions'", [personaId]).catch(() => ({ rows: [] }));
+            if (tombRows.length > 0) continue;
+            if (chatData?.nodes && Object.keys(chatData.nodes).length > 0) {
+              try { await queries.upsertSession({ id: personaId, userProfileId: profileId, personaId: personaId, createdAt: 1, updatedAt: 1 }); } catch(e) {}
+              for (const node of Object.values(chatData.nodes)) {
+                try { await queries.insertMessage({ ...node, sessionId: personaId, timestamp: node.timestamp || 1 }); } catch(e) {}
+              }
+              for (const [parentKey, idx] of Object.entries(chatData.activeChildIndex || {})) {
+                try { await queries.upsertBranchState(personaId, parentKey === 'null' ? null : parentKey, idx); } catch(e) {}
               }
             }
-            personas = await queries.getAllPersonas();
           }
-          console.log('[Init] Personas after fallback:', personas.length);
         }
 
+        profiles = await queries.getAllProfiles();
+        personas = await queries.getAllPersonas();
+
         // Load sessions and messages from SQLite
-        const sessions = await queries.getAllSessions();
+        sessions = await queries.getAllSessions();
         console.log('[Init] Sessions loaded:', sessions.length);
         const allMessages = {};
         for (const session of sessions) {
@@ -276,6 +260,11 @@ export const AppProvider = ({ children }) => {
       try { localStorage.setItem('tellama_user_profiles', JSON.stringify(userProfiles)); } catch(e) { console.warn('localStorage quota exceeded for profiles'); }
     }
   }, [userProfiles]);
+  useEffect(() => {
+    if (chatSessions.length > 0) {
+      try { localStorage.setItem('tellama_chat_sessions', JSON.stringify(chatSessions)); } catch(e) { console.warn('localStorage quota exceeded for chat sessions'); }
+    }
+  }, [chatSessions]);
 
   useEffect(() => {
     if (isLoading) return; // Wait until initialization is complete

@@ -185,13 +185,14 @@ export async function syncPull(serverUrl) {
               });
             }
             if (_table === 'messages') {
-              await queries.insertMessage({
+              await queries.applyMessageFromServer({
                 id: data.id,
                 sessionId: data.session_id,
                 sender: data.role === 'user' ? 'user' : 'bot',
                 content: data.content,
                 parentId: data.parent_message_id,
                 timestamp: data.created_at,
+                updatedAt: data.updated_at,
                 metadata: data.metadata,
               });
             }

@@ -10,26 +10,13 @@ async function initDB() {
   if (sqlite3.sqlite3) sqlite3 = sqlite3.sqlite3; // Handle nested property in some builds
   log('sqlite3 initialized, keys:', Object.keys(sqlite3));
 
-  if (sqlite3.opfs) {
-    try {
-      const PoolUtil = await sqlite3.installOpfsSAHPoolVfs({ clearOnInit: false });
-      db = new PoolUtil.OpfsSAHPoolDb('/tellama.db');
-      log('Opened OPFS SAHPool database:', db.filename);
-    } catch (e) {
-      err('OPFS SAHPool failed, trying OPFS Worker API:', e.message);
-      try {
-        db = new sqlite3.oo1.OpfsDb('/tellama.db');
-        log('Opened OPFS Worker API database');
-      } catch (e2) {
-        err('All OPFS methods failed, using in-memory DB:', e2.message);
-        db = new sqlite3.oo1.DB(':memory:');
-      }
-    }
-  } else if (sqlite3.oo1) {
-    err('OPFS not available, using in-memory DB');
+  try {
+    const PoolUtil = await sqlite3.installOpfsSAHPoolVfs({ clearOnInit: false });
+    db = new PoolUtil.OpfsSAHPoolDb('/tellama.db');
+    log('Opened OPFS SAHPool database:', db.filename);
+  } catch (e) {
+    err('OPFS SAHPool failed, fallback to in-memory:', e.message);
     db = new sqlite3.oo1.DB(':memory:');
-  } else {
-    throw new Error('sqlite3.oo1 is not available. Initialization failed.');
   }
 }
 
