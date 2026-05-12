@@ -2,15 +2,11 @@ import React, { useState } from 'react';
 import { AppProvider, useAppContext } from './context/AppContext';
 import Sidebar from './components/Sidebar';
 import ChatArea from './components/ChatArea';
-import SettingsModal from './components/SettingsModal';
 import PersonaModal from './components/PersonaModal';
-import PersonasListModal from './components/PersonasListModal';
 import UserProfileModal from './components/UserProfileModal';
 import AutoInitiator from './components/AutoInitiator';
 
 const MainApp = () => {
-  const [showSettings, setShowSettings] = useState(false);
-  const [showPersonasList, setShowPersonasList] = useState(false);
   const [showPersonaForm, setShowPersonaForm] = useState(false);
   const [showUserProfile, setShowUserProfile] = useState(false);
   const [editingPersonaId, setEditingPersonaId] = useState(null);
@@ -21,7 +17,6 @@ const MainApp = () => {
     if (activeChatId) {
       const activeChat = chatSessions.find(s => s.id === activeChatId);
       if (activeChat) {
-        // Toggle behavior: if already open, close it
         if (showPersonaForm) {
           setShowPersonaForm(false);
           setEditingPersonaId(null);
@@ -33,7 +28,6 @@ const MainApp = () => {
     }
   };
 
-  // Automatically update persona panel when switching chats
   React.useEffect(() => {
     if (showPersonaForm && activeChatId && editingPersonaId !== null) {
       const activeChat = chatSessions.find(s => s.id === activeChatId);
@@ -48,13 +42,14 @@ const MainApp = () => {
       <AutoInitiator />
       <div className={`${activeChatId ? 'hidden md:block' : 'block w-full md:w-auto'} h-full`}>
         <Sidebar 
-          onOpenSettings={() => setShowSettings(true)} 
-          onOpenPersonasList={() => setShowPersonasList(true)}
+          onEditPersona={(id) => {
+            setEditingPersonaId(id);
+            setShowPersonaForm(true);
+          }}
         />
       </div>
       
       <div className={`${activeChatId ? 'block w-full md:w-auto' : 'hidden md:block'} h-full flex-grow flex min-w-0 relative bg-[var(--tg-chat-bg)]`}>
-        {/* Static Background Layer */}
         <div 
           className="absolute inset-0 bg-cover bg-center bg-no-repeat pointer-events-none transition-all duration-500" 
           style={{ 
@@ -89,20 +84,6 @@ const MainApp = () => {
           )}
         </div>
       </div>
-
-      {showSettings && (
-        <SettingsModal onClose={() => setShowSettings(false)} />
-      )}
-
-      {showPersonasList && (
-        <PersonasListModal 
-          onClose={() => setShowPersonasList(false)}
-          onEditPersona={(id) => {
-            setEditingPersonaId(id);
-            setShowPersonaForm(true);
-          }}
-        />
-      )}
 
       {showPersonaForm && !editingPersonaId && (
         <PersonaModal 
