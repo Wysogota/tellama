@@ -158,13 +158,20 @@ export const AppProvider = ({ children }) => {
           const lsSettings = JSON.parse(localStorage.getItem('tellama_settings') || 'null');
           if (lsSettings) {
             setSettings(prev => ({ ...prev, ...lsSettings }));
-            // We DON'T migrate to DB here anymore. 
-            // This prevents stale localStorage from overwriting fresher server data.
-            // Settings will be saved to DB either by syncPull from server 
-            // or when the user explicitly changes a setting.
           }
         }
-        
+
+        const activeChatIdFromStorage = await queries.getSyncMeta('active_chat_id').catch(() => null)
+          || localStorage.getItem('tellama_active_chat');
+
+        console.log('[Init] Restore activeChatId — stored:', activeChatIdFromStorage, '| sessions:', sessions.length);
+        if (activeChatIdFromStorage && sessions.some(s => s.id === activeChatIdFromStorage)) {
+          console.log('[Init] Activating session:', activeChatIdFromStorage);
+          setActiveChatId(activeChatIdFromStorage);
+        } else {
+          console.log('[Init] No session to restore or session not found');
+        }
+
         setIsLoading(false);
 
 
@@ -230,6 +237,8 @@ export const AppProvider = ({ children }) => {
         if (Object.keys(lsMessages).length > 0) setMessages(lsMessages);
         if (lsSettings) setSettings(lsSettings);
         if (lsActiveUser) setActiveUserProfileId(lsActiveUser);
+        const lsActiveChat = localStorage.getItem('tellama_active_chat');
+        if (lsActiveChat) setActiveChatId(lsActiveChat);
         setIsLoading(false);
       }
     }
@@ -250,11 +259,23 @@ export const AppProvider = ({ children }) => {
       try { localStorage.setItem('tellama_user_profiles', JSON.stringify(userProfiles)); } catch(e) { console.warn('localStorage quota exceeded for profiles'); }
     }
   }, [userProfiles]);
+
   useEffect(() => {
+    if (isLoading) return; // Wait until initialization is complete
+    if (activeChatId) {
+      localStorage.setItem('tellama_active_chat', activeChatId);
+      queries.setSyncMeta('active_chat_id', activeChatId).catch(() => {});
+    } else {
+      localStorage.removeItem('tellama_active_chat');
+      queries.setSyncMeta('active_chat_id', '').catch(() => {});
+    }
+  }, [activeChatId, isLoading]);
+  useEffect(() => {
+    if (isLoading) return;
     if (activeUserProfileId) {
       try { localStorage.setItem('tellama_active_user', activeUserProfileId); } catch(e) {}
     }
-  }, [activeUserProfileId]);
+  }, [activeUserProfileId, isLoading]);
   useEffect(() => {
     if (Object.keys(messages).length > 0) {
       try { localStorage.setItem('tellama_messages', JSON.stringify(messages)); } catch(e) { console.warn('localStorage quota exceeded for messages (too large)'); }
