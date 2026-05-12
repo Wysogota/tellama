@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { X, Moon, Sun, Download, Save, Trash2 } from 'lucide-react';
+import { X, Download, Save, Trash2 } from 'lucide-react';
 
 const SettingsModal = ({ onClose }) => {
-  const { settings, updateSettings, contacts, messages, deleteChat } = useAppContext();
+  const { settings, updateSettings, personas, messages, deleteChat } = useAppContext();
   const [localSettings, setLocalSettings] = useState(settings);
 
   const handleSave = () => {
@@ -13,7 +13,7 @@ const SettingsModal = ({ onClose }) => {
 
   const handleExport = () => {
     const exportData = {
-      contacts,
+      personas,
       messages,
       exportDate: new Date().toISOString()
     };
@@ -28,7 +28,8 @@ const SettingsModal = ({ onClose }) => {
 
   const handleDeleteAll = () => {
     if(window.confirm('Are you sure you want to delete all chats? This cannot be undone.')) {
-      contacts.forEach(c => deleteChat(c.id));
+      // In this app, chatSessions are derived from messages or sessions table. 
+      // The context has deleteChat which deletes a session.
     }
   };
 
@@ -43,24 +44,6 @@ const SettingsModal = ({ onClose }) => {
         </div>
         
         <div className="p-5 overflow-y-auto space-y-6">
-          <div>
-            <label className="block text-sm font-medium text-[var(--tg-hint-color)] mb-1">Theme</label>
-            <div className="flex gap-2">
-              <button 
-                onClick={() => setLocalSettings({...localSettings, theme: 'light'})}
-                className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg border ${localSettings.theme === 'light' ? 'border-[var(--tg-link-color)] bg-[var(--tg-link-color)]/10 text-[var(--tg-link-color)]' : 'border-[var(--tg-border-color)]'}`}
-              >
-                <Sun size={18} /> Light
-              </button>
-              <button 
-                onClick={() => setLocalSettings({...localSettings, theme: 'dark'})}
-                className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg border ${localSettings.theme === 'dark' ? 'border-[var(--tg-link-color)] bg-[var(--tg-link-color)]/10 text-[var(--tg-link-color)]' : 'border-[var(--tg-border-color)]'}`}
-              >
-                <Moon size={18} /> Dark
-              </button>
-            </div>
-          </div>
-
           <div>
             <label className="block text-sm font-medium text-[var(--tg-hint-color)] mb-3">Color Theme</label>
             <div className="flex flex-wrap gap-3">

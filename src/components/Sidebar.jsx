@@ -1,13 +1,32 @@
 import React, { useState } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { Search, Users, Menu } from 'lucide-react';
+import { Search, Users, Menu, Plus, Bookmark, Archive, Moon, Settings } from 'lucide-react';
 
-const Sidebar = ({ onOpenSettings, onOpenPersonasList, onOpenUserProfile }) => {
-  const { personas, chatSessions, activeChatId, setActiveChatId, messages, userProfiles, activeUserProfileId } = useAppContext();
+const Sidebar = ({ onOpenSettings, onOpenPersonasList }) => {
+  const { personas, chatSessions, activeChatId, setActiveChatId, messages, userProfiles, activeUserProfileId, setActiveUserProfileId, addUserProfile, settings, updateSettings } = useAppContext();
   const [searchQuery, setSearchQuery] = useState('');
-
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
-  const activeUser = userProfiles.find(p => p.id === activeUserProfileId) || userProfiles[0];
+  const menuRef = React.useRef(null);
+
+  React.useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (menuRef.current && !menuRef.current.contains(event.target)) {
+        setIsMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleAddProfile = async () => {
+    const name = window.prompt('Enter new profile name:');
+    if (name) {
+      const id = await addUserProfile({ name, biography: '', age: '', gender: '', avatar: null });
+      setActiveUserProfileId(id);
+    }
+    setIsMenuOpen(false);
+  };
 
   const filteredChats = chatSessions
     .map(session => ({
@@ -39,12 +58,95 @@ const Sidebar = ({ onOpenSettings, onOpenPersonasList, onOpenUserProfile }) => {
   return (
     <div className="w-full md:w-[400px] lg:w-[450px] bg-[var(--tg-sidebar-bg)] md:border-r border-[var(--tg-border-color)] flex flex-col h-full z-10 relative shadow-sm flex-shrink-0">
       <div className="flex items-center px-2 md:px-4 border-b border-[var(--tg-border-color)] h-[60px] flex-shrink-0 bg-[var(--tg-bg-color)]">
-        <button 
-          onClick={onOpenSettings}
-          className="p-2 mr-2 text-[var(--tg-hint-color)] hover:bg-[var(--tg-sidebar-hover)] rounded-full transition-colors"
-        >
-          <Menu size={24} />
-        </button>
+        <div className="relative" ref={menuRef}>
+          <button 
+            onClick={() => setIsMenuOpen(!isMenuOpen)}
+            className={`p-2 mr-2 text-[var(--tg-hint-color)] hover:bg-[var(--tg-sidebar-hover)] rounded-full transition-colors ${isMenuOpen ? 'bg-[var(--tg-sidebar-hover)] text-[var(--tg-link-color)]' : ''}`}
+          >
+            <Menu size={24} />
+          </button>
+
+          {isMenuOpen && (
+            <div className="absolute left-0 top-[100%] mt-2 w-[280px] bg-[var(--tg-bg-color)] border border-[var(--tg-border-color)] rounded-2xl shadow-2xl overflow-hidden z-[100] py-2 transition-all flex flex-col">
+              {/* Profile Selection */}
+              <div className="px-2 mb-1">
+                {userProfiles.map(profile => (
+                  <button
+                    key={profile.id}
+                    onClick={() => {
+                      setActiveUserProfileId(profile.id);
+                      setIsMenuOpen(false);
+                    }}
+                    className={`w-full flex items-center px-3 py-2 rounded-xl transition-colors ${profile.id === activeUserProfileId ? 'bg-[var(--tg-link-color)] text-white' : 'hover:bg-[var(--tg-sidebar-hover)] text-[var(--tg-text-color)]'}`}
+                  >
+                    <div className="w-8 h-8 rounded-full overflow-hidden bg-purple-500/20 flex-shrink-0 mr-3 border border-white/10">
+                      {profile.avatar ? (
+                        <img src={profile.avatar} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className={`w-full h-full flex items-center justify-center font-bold text-xs ${profile.id === activeUserProfileId ? 'text-white' : 'text-purple-500'}`}>
+                          {profile.name.charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                    </div>
+                    <span className="font-medium text-[15px] truncate">{profile.name}</span>
+                  </button>
+                ))}
+                
+                <button
+                  onClick={handleAddProfile}
+                  className="w-full flex items-center px-3 py-2 rounded-xl hover:bg-[var(--tg-sidebar-hover)] text-[var(--tg-text-color)] transition-colors mt-1"
+                >
+                  <div className="w-8 h-8 rounded-full bg-[var(--tg-secondary-bg-color)] flex items-center justify-center mr-3 text-[var(--tg-hint-color)]">
+                    <Plus size={18} />
+                  </div>
+                  <span className="text-[15px]">Add Account</span>
+                </button>
+              </div>
+
+              <div className="h-[1px] bg-[var(--tg-border-color)] mx-3 my-1 opacity-50" />
+
+              <div className="px-2 space-y-0.5">
+                <button className="w-full flex items-center px-3 py-2.5 rounded-xl hover:bg-[var(--tg-sidebar-hover)] text-[var(--tg-text-color)] transition-colors opacity-50 cursor-default">
+                  <Bookmark size={20} className="mr-4 text-[var(--tg-hint-color)]" />
+                  <span className="text-[15px]">Saved Messages</span>
+                </button>
+                <button className="w-full flex items-center px-3 py-2.5 rounded-xl hover:bg-[var(--tg-sidebar-hover)] text-[var(--tg-text-color)] transition-colors opacity-50 cursor-default">
+                  <Archive size={20} className="mr-4 text-[var(--tg-hint-color)]" />
+                  <span className="text-[15px]">Archived Chats</span>
+                </button>
+                <button 
+                  onClick={() => { onOpenPersonasList(); setIsMenuOpen(false); }}
+                  className="w-full flex items-center px-3 py-2.5 rounded-xl hover:bg-[var(--tg-sidebar-hover)] text-[var(--tg-text-color)] transition-colors"
+                >
+                  <Users size={20} className="mr-4 text-[var(--tg-hint-color)]" />
+                  <span className="text-[15px]">Contacts</span>
+                </button>
+              </div>
+
+              <div className="h-[1px] bg-[var(--tg-border-color)] mx-3 my-1 opacity-50" />
+
+              <div className="px-2 space-y-0.5">
+                <button 
+                  onClick={() => { onOpenSettings(); setIsMenuOpen(false); }}
+                  className="w-full flex items-center px-3 py-2.5 rounded-xl hover:bg-[var(--tg-sidebar-hover)] text-[var(--tg-text-color)] transition-colors"
+                >
+                  <Settings size={20} className="mr-4 text-[var(--tg-hint-color)]" />
+                  <span className="text-[15px]">Settings</span>
+                </button>
+                <button 
+                  onClick={() => {
+                    updateSettings({ theme: settings.theme === 'dark' ? 'light' : 'dark' });
+                    setIsMenuOpen(false);
+                  }}
+                  className="w-full flex items-center px-3 py-2.5 rounded-xl hover:bg-[var(--tg-sidebar-hover)] text-[var(--tg-text-color)] transition-colors"
+                >
+                  <Moon size={20} className="mr-4 text-[var(--tg-hint-color)]" />
+                  <span className="text-[15px]">Night Mode</span>
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
         <div className="relative flex-grow">
           <div className={`flex items-center h-[40px] rounded-full px-3 transition-all duration-200 ${isSearchFocused ? 'bg-[var(--tg-search-bg-focused)] shadow-[0_2px_8px_rgba(0,0,0,0.2)]' : 'bg-[var(--tg-search-bg)]'}`}>
             <Search size={18} className="mr-2 text-[var(--tg-hint-color)] flex-shrink-0" />
@@ -61,25 +163,6 @@ const Sidebar = ({ onOpenSettings, onOpenPersonasList, onOpenUserProfile }) => {
         </div>
       </div>
 
-      {/* User Profile Header */}
-      {activeUser && (
-        <div 
-          onClick={onOpenUserProfile}
-          className="flex items-center px-4 py-3 bg-[var(--tg-secondary-bg-color)] cursor-pointer hover:bg-[var(--tg-sidebar-hover)] transition-all duration-200"
-        >
-          <div className="w-[42px] h-[42px] rounded-full overflow-hidden bg-gradient-to-br from-purple-400 to-purple-600 flex-shrink-0 flex items-center justify-center text-white font-semibold text-lg mr-3 shadow-sm border border-white/10">
-            {activeUser.avatar ? (
-              <img src={activeUser.avatar} className="w-full h-full object-cover" />
-            ) : (
-              activeUser.name.charAt(0).toUpperCase()
-            )}
-          </div>
-          <div className="flex-grow min-w-0">
-            <h3 className="font-semibold truncate text-[15px]">{activeUser.name}</h3>
-            <p className="text-[13px] text-[var(--tg-link-color)] font-medium">My Persona</p>
-          </div>
-        </div>
-      )}
 
       <div className="flex-grow overflow-y-auto px-2 py-1">
         {filteredChats.map(({ session, persona }) => {

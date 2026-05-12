@@ -50,7 +50,6 @@ const MainApp = () => {
         <Sidebar 
           onOpenSettings={() => setShowSettings(true)} 
           onOpenPersonasList={() => setShowPersonasList(true)}
-          onOpenUserProfile={() => setShowUserProfile(true)}
         />
       </div>
       
