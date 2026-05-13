@@ -30,7 +30,8 @@ router.post('/keys', (req, res) => {
   if (!provider || !key || !key.trim()) {
     return res.status(400).json({ error: 'Missing provider or key' });
   }
-  if (!PROVIDER_CONFIGS[provider]) {
+  const baseProvider = provider.replace(/^memory_/, '');
+  if (!PROVIDER_CONFIGS[baseProvider]) {
     return res.status(400).json({ error: 'Invalid provider' });
   }
   try {
@@ -59,7 +60,8 @@ router.get('/key-status', (req, res) => {
 // DELETE /llm/keys/:provider  — remove stored key
 router.delete('/keys/:provider', (req, res) => {
   const { provider } = req.params;
-  if (!PROVIDER_CONFIGS[provider]) {
+  const baseProvider = provider.replace(/^memory_/, '');
+  if (!PROVIDER_CONFIGS[baseProvider]) {
     return res.status(400).json({ error: 'Invalid provider' });
   }
   try {
@@ -80,7 +82,8 @@ router.post('/proxy', async (req, res) => {
     return res.status(400).json({ error: 'Missing provider or messages' });
   }
 
-  const config = PROVIDER_CONFIGS[provider];
+  const baseProvider = provider.replace(/^memory_/, '');
+  const config = PROVIDER_CONFIGS[baseProvider];
   if (!config) {
     return res.status(400).json({ error: `Unknown provider "${provider}". Use llamacpp (direct) or openrouter/nvidia (proxy).` });
   }

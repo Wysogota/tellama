@@ -4,7 +4,7 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   optimizeDeps: {
-    exclude: ['@sqlite.org/sqlite-wasm'],
+    exclude: ['@sqlite.org/sqlite-wasm', 'sqlite-vec-wasm'],
   },
   server: {
     headers: {

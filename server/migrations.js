@@ -63,7 +63,6 @@ export function runServerMigrations() {
       memory_type      TEXT NOT NULL,
       content          TEXT NOT NULL,
       importance_score REAL NOT NULL DEFAULT 0.5,
-      embedding_ref    TEXT,
       created_at       INTEGER NOT NULL
     )
   `);
@@ -95,6 +94,15 @@ export function runServerMigrations() {
 
   try {
     db.exec(`ALTER TABLE messages ADD COLUMN metadata TEXT DEFAULT '{}'`);
+  } catch (e) {}
+
+  try {
+    db.exec(`ALTER TABLE memories_store ADD COLUMN updated_at INTEGER`);
+    db.exec(`UPDATE memories_store SET updated_at = created_at WHERE updated_at IS NULL`);
+  } catch (e) {}
+
+  try {
+    db.exec(`ALTER TABLE memories_store DROP COLUMN embedding_ref`);
   } catch (e) {}
 
   console.log('[Server Migrations] Database schema initialized');

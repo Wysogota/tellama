@@ -57,6 +57,8 @@ export function getDB() {
   return db;
 }
 
+window.__db = db;
+
 /** Initialize and warm up the worker. Call once at app start. */
 export async function initDatabase() {
   if (readyPromise) return readyPromise;

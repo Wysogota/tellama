@@ -1,6 +1,7 @@
 const SERVER_URL = 'http://localhost:3001';
+import { searchMemories, extractAndSaveMemories } from './memoryManager.js';
 
-const buildSystemPrompt = (contact, activeUser, isSpontaneous) => {
+const buildSystemPrompt = (contact, activeUser, isSpontaneous, relevantMemories = []) => {
   let prompt = `You are a real person communicating in a Telegram chat. 
 Keep your responses natural, concise, and conversational. 
 Do not use formatting like markdown headers or lists unless absolutely necessary. 
@@ -20,6 +21,8 @@ ${activeUser.age ? `User's age: ${activeUser.age}` : ''}
 ${activeUser.gender ? `User's gender: ${activeUser.gender}` : ''}
 ${activeUser.biography ? `User's background/role: ${activeUser.biography}` : ''}
 Please take this into account when formulating your responses.
+
+${relevantMemories && relevantMemories.length > 0 ? `Here are some relevant long-term memories about the user/persona:\n${relevantMemories.map(m => '- ' + m).join('\n')}\n` : ''}
 `;
 
   if (isSpontaneous) {
@@ -100,7 +103,57 @@ export const generateChatResponse = async (
   const startTime = performance.now();
   const provider = settings.provider || 'llamacpp';
 
-  const systemPrompt = buildSystemPrompt(contact, activeUser, isSpontaneous);
+  let relevantMemories = [];
+  if (settings.memoryEnabled !== false && messages.length > 0) {
+    const lastUserMessage = [...messages].reverse().find(m => m.sender === 'user');
+    if (lastUserMessage) {
+      relevantMemories = await searchMemories(lastUserMessage.content, contact.id, 3);
+    }
+    
+    // Background extraction logic using database to track cursor
+    const memoryInterval = settings.memoryInterval || 10;
+    if (messages.length > 0) {
+      // Run async block without awaiting to not block response generation
+      (async () => {
+        try {
+          const db = (await import('../db/DatabaseBridge.js')).default;
+          const sessionId = messages[messages.length - 1].sessionId; // assuming message has sessionId, wait we might not have it in api.js?
+          // messages in api.js: { role, content, sender, id, ... }
+          // Let's just use persona_id as a global cursor for this persona for now.
+          const cursorKey = `mem_cursor_${contact.id}`;
+          
+          let lastAnalyzedIndex = 0;
+          const res = await db.query('SELECT value FROM sync_metadata WHERE key = ?', [cursorKey]);
+          if (res.rows.length > 0) lastAnalyzedIndex = parseInt(res.rows[0].value, 10);
+          
+          if (window[`__mem_sync_active_${contact.id}`]) return;
+          window[`__mem_sync_active_${contact.id}`] = true;
+          
+          try {
+            while (messages.length - lastAnalyzedIndex >= memoryInterval) {
+              const chunk = messages.slice(lastAnalyzedIndex, lastAnalyzedIndex + memoryInterval);
+              console.log(`[MemoryManager] Triggering chunk extraction for messages ${lastAnalyzedIndex} to ${lastAnalyzedIndex + memoryInterval}`);
+              await extractAndSaveMemories(settings, contact.id, chunk);
+              
+              // update cursor
+              lastAnalyzedIndex += memoryInterval;
+              await db.exec('INSERT INTO sync_metadata (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', [cursorKey, lastAnalyzedIndex.toString()]);
+              
+              // Small pause to let UI breathe and not hammer the API
+              await new Promise(r => setTimeout(r, 1000));
+            }
+          } finally {
+            window[`__mem_sync_active_${contact.id}`] = false;
+          }
+        } catch (e) {
+          console.error('[MemoryManager] Cursor extraction error:', e);
+          window[`__mem_sync_active_${contact.id}`] = false;
+        }
+      })();
+    }
+  }
+
+  const systemPrompt = buildSystemPrompt(contact, activeUser, isSpontaneous, relevantMemories);
 
   let rawMessages = messages.map(m => ({ 
     role: m.sender === 'user' ? 'user' : 'assistant', 

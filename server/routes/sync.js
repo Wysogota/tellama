@@ -93,10 +93,11 @@ router.post('/push', (req, res) => {
       }
 
       if (_table === 'memories_store') {
-        db.prepare(`INSERT INTO memories_store (id, persona_id, memory_type, content, importance_score, embedding_ref, created_at)
+        const t = Date.now();
+        db.prepare(`INSERT INTO memories_store (id, persona_id, memory_type, content, importance_score, created_at, updated_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(id) DO NOTHING`)
-          .run(data.id, data.persona_id, data.memory_type ?? '', data.content ?? '', data.importance_score ?? 0.5, data.embedding_ref ?? null, data.created_at);
+                    ON CONFLICT(id) DO UPDATE SET updated_at=excluded.updated_at`)
+          .run(data.id, data.persona_id, data.memory_type ?? '', data.content ?? '', data.importance_score ?? 0.5, data.created_at, t);
         syncedIds.memories_store.push(data.id);
       }
       
@@ -157,7 +158,7 @@ router.get('/pull', (req, res) => {
       ...db.prepare("SELECT *, 'chat_sessions' as _table FROM chat_sessions WHERE updated_at > ?").all(sinceTs),
       ...db.prepare("SELECT *, 'messages' as _table FROM messages WHERE updated_at > ?").all(sinceTs),
       ...db.prepare("SELECT *, 'session_branch_state' as _table FROM session_branch_state WHERE updated_at > ?").all(sinceTs),
-      ...db.prepare("SELECT *, 'memories_store' as _table FROM memories_store WHERE created_at > ?").all(sinceTs),
+      ...db.prepare("SELECT *, 'memories_store' as _table FROM memories_store WHERE (updated_at IS NOT NULL AND updated_at > ?) OR (updated_at IS NULL AND created_at > ?)").all(sinceTs, sinceTs),
       ...db.prepare("SELECT *, 'app_settings' as _table FROM app_settings WHERE updated_at > ?").all(sinceTs),
     ];
     const records = [...deletedRecords, ...liveRecords];

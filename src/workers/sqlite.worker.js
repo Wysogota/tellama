@@ -1,4 +1,4 @@
-import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
+import sqlite3InitModule from 'sqlite-vec-wasm';
 
 let db = null;
 

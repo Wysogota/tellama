@@ -38,18 +38,20 @@ const SettingsPanel = ({ onBack }) => {
   const { settings, updateSettings, personas, messages } = useAppContext();
   const [localSettings, setLocalSettings] = useState({ ...settings });
 
-  const [keyInputs, setKeyInputs] = useState({ openrouter: '', nvidia: '' });
-  const [keyStatus, setKeyStatus] = useState({ openrouter: false, nvidia: false });
+  const [keyInputs, setKeyInputs] = useState({ openrouter: '', nvidia: '', memory_openrouter: '', memory_nvidia: '' });
+  const [keyStatus, setKeyStatus] = useState({ openrouter: false, nvidia: false, memory_openrouter: false, memory_nvidia: false });
   const [keyLoading, setKeyLoading] = useState(true);
   const [saveStatus, setSaveStatus] = useState(null);
-  const [showKey, setShowKey] = useState({ openrouter: false, nvidia: false });
+  const [showKey, setShowKey] = useState({ openrouter: false, nvidia: false, memory_openrouter: false, memory_nvidia: false });
 
   useEffect(() => {
     Promise.all([
       fetch(`${SERVER_URL}/llm/key-status?provider=openrouter`).then(r => r.json()).catch(() => ({ configured: false })),
       fetch(`${SERVER_URL}/llm/key-status?provider=nvidia`).then(r => r.json()).catch(() => ({ configured: false })),
-    ]).then(([or, nv]) => {
-      setKeyStatus({ openrouter: or.configured, nvidia: nv.configured });
+      fetch(`${SERVER_URL}/llm/key-status?provider=memory_openrouter`).then(r => r.json()).catch(() => ({ configured: false })),
+      fetch(`${SERVER_URL}/llm/key-status?provider=memory_nvidia`).then(r => r.json()).catch(() => ({ configured: false })),
+    ]).then(([or, nv, mor, mnv]) => {
+      setKeyStatus({ openrouter: or.configured, nvidia: nv.configured, memory_openrouter: mor.configured, memory_nvidia: mnv.configured });
       setKeyLoading(false);
     });
   }, []);
@@ -59,7 +61,7 @@ const SettingsPanel = ({ onBack }) => {
     try {
       updateSettings(localSettings);
 
-      for (const provider of ['openrouter', 'nvidia']) {
+      for (const provider of ['openrouter', 'nvidia', 'memory_openrouter', 'memory_nvidia']) {
         const key = keyInputs[provider].trim();
         if (!key) continue;
         const res = await fetch(`${SERVER_URL}/llm/keys`, {
@@ -100,6 +102,10 @@ const SettingsPanel = ({ onBack }) => {
 
   const currentProvider = localSettings.provider || 'llamacpp';
   const needsApiKey = currentProvider === 'openrouter' || currentProvider === 'nvidia';
+
+  const memProvider = localSettings.memoryProvider || 'llamacpp';
+  const memNeedsApiKey = memProvider === 'openrouter' || memProvider === 'nvidia';
+  const memKeyName = 'memory_' + memProvider;
 
   return (
     <div className="flex flex-col h-full bg-[var(--tg-bg-color)]">
@@ -247,6 +253,122 @@ const SettingsPanel = ({ onBack }) => {
               </div>
             )}
           </div>
+        </div>
+
+        {/* Memory System */}
+        <div className="pt-4 border-t border-[var(--tg-border-color)] space-y-4">
+          <div className="flex justify-between items-center">
+            <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--tg-hint-color)]">
+              Memory System
+            </label>
+            <label className="flex items-center cursor-pointer">
+              <div className="relative">
+                <input 
+                  type="checkbox" 
+                  className="sr-only" 
+                  checked={localSettings.memoryEnabled ?? true}
+                  onChange={(e) => setLocalSettings({ ...localSettings, memoryEnabled: e.target.checked })}
+                />
+                <div className={`block w-10 h-6 rounded-full transition-colors ${localSettings.memoryEnabled !== false ? 'bg-[var(--tg-link-color)]' : 'bg-[var(--tg-secondary-bg-color)]'}`}></div>
+                <div className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${localSettings.memoryEnabled !== false ? 'transform translate-x-4' : ''}`}></div>
+              </div>
+            </label>
+          </div>
+
+          {(localSettings.memoryEnabled !== false) && (
+            <>
+              <div>
+                <label className="block text-[11px] text-[var(--tg-hint-color)] mb-1">
+                  Extraction Interval (messages)
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  value={localSettings.memoryInterval ?? 10}
+                  onChange={(e) => setLocalSettings({ ...localSettings, memoryInterval: parseInt(e.target.value) || 10 })}
+                  className="w-full bg-[var(--tg-secondary-bg-color)] text-[var(--tg-text-color)] border border-[var(--tg-border-color)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--tg-link-color)] transition-colors"
+                />
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                {PROVIDERS.map(({ id, label, desc, Icon }) => {
+                  const selected = memProvider === id;
+                  return (
+                    <button
+                      key={'mem-' + id}
+                      onClick={() => setLocalSettings({ ...localSettings, memoryProvider: id })}
+                      className={`flex flex-col items-center gap-1 p-2 rounded-xl border-2 transition-all text-center
+                        ${selected
+                          ? 'border-[var(--tg-link-color)] bg-[var(--tg-link-color)]/10'
+                          : 'border-[var(--tg-border-color)] hover:border-[var(--tg-link-color)]/40 bg-[var(--tg-secondary-bg-color)]'
+                        }`}
+                    >
+                      <Icon
+                        size={20}
+                        className={selected ? 'text-[var(--tg-link-color)]' : 'text-[var(--tg-hint-color)]'}
+                      />
+                      <span className={`text-[11px] font-semibold leading-tight ${selected ? 'text-[var(--tg-link-color)]' : 'text-[var(--tg-text-color)]'}`}>
+                        {label}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-[11px] text-[var(--tg-hint-color)] mb-1">Memory Model Name</label>
+                  <input
+                    type="text"
+                    value={localSettings.memoryModelName || ''}
+                    onChange={(e) => setLocalSettings({ ...localSettings, memoryModelName: e.target.value })}
+                    placeholder={MODEL_PLACEHOLDERS[memProvider]}
+                    className="w-full bg-[var(--tg-secondary-bg-color)] text-[var(--tg-text-color)] border border-[var(--tg-border-color)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--tg-link-color)] transition-colors"
+                  />
+                </div>
+
+                {memProvider === 'llamacpp' && (
+                  <div>
+                    <label className="block text-[11px] text-[var(--tg-hint-color)] mb-1">Memory API Host</label>
+                    <input
+                      type="text"
+                      value={localSettings.memoryHost || ''}
+                      onChange={(e) => setLocalSettings({ ...localSettings, memoryHost: e.target.value })}
+                      placeholder="http://localhost:8080"
+                      className="w-full bg-[var(--tg-secondary-bg-color)] text-[var(--tg-text-color)] border border-[var(--tg-border-color)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--tg-link-color)] transition-colors"
+                    />
+                  </div>
+                )}
+
+                {memNeedsApiKey && (
+                  <div>
+                    <label className="block text-[11px] text-[var(--tg-hint-color)] mb-1 flex items-center justify-between">
+                      <span>Memory API Key</span>
+                      {keyStatus[memKeyName] && (
+                        <button onClick={() => handleClearKey(memKeyName)} className="text-red-400 hover:text-red-500 text-[10px]">Remove</button>
+                      )}
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showKey[memKeyName] ? 'text' : 'password'}
+                        value={keyInputs[memKeyName]}
+                        onChange={(e) => setKeyInputs(prev => ({ ...prev, [memKeyName]: e.target.value }))}
+                        placeholder={keyStatus[memKeyName] ? '••••••••' : 'Enter key...'}
+                        className="w-full bg-[var(--tg-secondary-bg-color)] text-[var(--tg-text-color)] border border-[var(--tg-border-color)] rounded-lg pl-3 pr-10 py-2 text-sm outline-none focus:border-[var(--tg-link-color)] transition-colors font-mono"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowKey(prev => ({ ...prev, [memKeyName]: !prev[memKeyName] }))}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--tg-hint-color)]"
+                      >
+                        {showKey[memKeyName] ? <XCircle size={14} /> : <Key size={14} />}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </div>
 
         <div className="pt-4 border-t border-[var(--tg-border-color)]">

@@ -72,11 +72,21 @@ export async function runMigrations() {
       memory_type      TEXT NOT NULL,
       content          TEXT NOT NULL,
       importance_score REAL NOT NULL DEFAULT 0.5,
-      embedding_ref    TEXT,
       created_at       INTEGER NOT NULL,
       sync_status      TEXT NOT NULL DEFAULT 'pending'
     )
   `);
+
+  try {
+    await db.exec(`
+      CREATE VIRTUAL TABLE IF NOT EXISTS vec_memories USING vec0(
+        id TEXT PRIMARY KEY,
+        embedding float[384]
+      )
+    `);
+  } catch (e) {
+    console.warn('[Migrations] Failed to create vec_memories table. Check if sqlite-vec is loaded properly.', e.message);
+  }
 
   await db.exec(`
     CREATE TABLE IF NOT EXISTS sync_metadata (
@@ -120,6 +130,12 @@ export async function runMigrations() {
     }
   } catch (e) {
     console.warn('[Migrations] Metadata column check/add failed:', e.message);
+  }
+
+  try {
+    await db.exec(`ALTER TABLE memories_store DROP COLUMN embedding_ref`);
+  } catch (e) {
+    // Ignore error if column doesn't exist or DB is too old
   }
 
   console.log('[Migrations] All tables created/verified');
