@@ -27,10 +27,17 @@ export function runServerMigrations() {
       id              TEXT PRIMARY KEY,
       user_profile_id TEXT NOT NULL,
       persona_id      TEXT NOT NULL,
+      name            TEXT,
       created_at      INTEGER NOT NULL,
       updated_at      INTEGER NOT NULL
     )
   `);
+
+  try {
+    db.exec(`ALTER TABLE chat_sessions ADD COLUMN name TEXT`);
+  } catch (e) {
+    // Column already exists
+  }
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS messages (

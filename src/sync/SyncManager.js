@@ -180,6 +180,7 @@ export async function syncPull(serverUrl) {
                 id: data.id,
                 userProfileId: data.user_profile_id,
                 personaId: data.persona_id,
+                name: data.name,
                 createdAt: data.created_at,
                 updatedAt: data.updated_at,
               });

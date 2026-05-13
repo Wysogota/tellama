@@ -33,11 +33,22 @@ export async function runMigrations() {
       id              TEXT PRIMARY KEY,
       user_profile_id TEXT NOT NULL,
       persona_id      TEXT NOT NULL,
+      name            TEXT,
       created_at      INTEGER NOT NULL,
       updated_at      INTEGER NOT NULL,
       sync_status     TEXT NOT NULL DEFAULT 'pending'
     )
   `);
+
+  try {
+    const sessionInfo = await db.query("PRAGMA table_info(chat_sessions)");
+    const hasName = sessionInfo.rows.some(col => col.name === 'name');
+    if (!hasName) {
+      await db.exec(`ALTER TABLE chat_sessions ADD COLUMN name TEXT`);
+    }
+  } catch (e) {
+    console.warn('[Migrations] Chat session name column check/add failed:', e.message);
+  }
 
   await db.exec(`
     CREATE TABLE IF NOT EXISTS messages (

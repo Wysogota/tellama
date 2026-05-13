@@ -58,11 +58,11 @@ router.post('/push', (req, res) => {
       if (_table === 'chat_sessions') {
         const isDeleted = db.prepare("SELECT 1 FROM deleted_records WHERE id = ? AND table_name = 'chat_sessions'").get(data.id);
         if (!isDeleted) {
-          db.prepare(`INSERT INTO chat_sessions (id, user_profile_id, persona_id, created_at, updated_at)
-                      VALUES (?, ?, ?, ?, ?)
-                      ON CONFLICT(id) DO UPDATE SET updated_at=excluded.updated_at
+          db.prepare(`INSERT INTO chat_sessions (id, user_profile_id, persona_id, name, created_at, updated_at)
+                      VALUES (?, ?, ?, ?, ?, ?)
+                      ON CONFLICT(id) DO UPDATE SET name=excluded.name, updated_at=excluded.updated_at
                       WHERE excluded.updated_at > chat_sessions.updated_at`)
-            .run(data.id, data.user_profile_id ?? '', data.persona_id ?? '', data.created_at, data.updated_at);
+            .run(data.id, data.user_profile_id ?? '', data.persona_id ?? '', data.name ?? null, data.created_at, data.updated_at);
           syncedIds.chat_sessions.push(data.id);
         } else {
           syncedIds.chat_sessions.push(data.id);

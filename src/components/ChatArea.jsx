@@ -4,7 +4,7 @@ import { Paperclip, SendHorizontal, MoreVertical, Loader2, Edit2, Trash2, Rotate
 import { generateChatResponse } from '../services/api';
 
 const ChatArea = ({ onOpenModelInfo }) => {
-  const { personas, chatSessions, activeChatId, setActiveChatId, messages, addMessage, updateMessage, setFullMessageContent, deleteMessageNode, switchBranch, settings, userProfiles, activeUserProfileId, deleteChat, getNewAbortSignal, clearGeneration, streamingMessages, updateMessageMetadata } = useAppContext();
+  const { personas, chatSessions, activeChatId, setActiveChatId, messages, addMessage, updateMessage, setFullMessageContent, deleteMessageNode, switchBranch, settings, userProfiles, activeUserProfileId, deleteChat, renameChat, getNewAbortSignal, clearGeneration, streamingMessages, updateMessageMetadata } = useAppContext();
   const [inputText, setInputText] = useState('');
   const [attachments, setAttachments] = useState([]);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -17,6 +17,8 @@ const ChatArea = ({ onOpenModelInfo }) => {
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [showSearchResults, setShowSearchResults] = useState(true);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [tempChatName, setTempChatName] = useState('');
   
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -285,6 +287,25 @@ const ChatArea = ({ onOpenModelInfo }) => {
       }
     });
     e.target.value = '';
+  };
+
+  const handleRenameChat = (e) => {
+    e.stopPropagation();
+    setIsMenuOpen(false);
+    setTempChatName(activeChat.name || activePersona.name);
+    setIsRenaming(true);
+  };
+
+  const submitRename = () => {
+    if (tempChatName.trim() && tempChatName !== (activeChat.name || activePersona.name)) {
+      renameChat(activeChatId, tempChatName.trim());
+    }
+    setIsRenaming(false);
+  };
+
+  const handleRenameKeyDown = (e) => {
+    if (e.key === 'Enter') submitRename();
+    if (e.key === 'Escape') setIsRenaming(false);
   };
 
   const handleDeleteChat = (e) => {
@@ -565,15 +586,29 @@ const ChatArea = ({ onOpenModelInfo }) => {
       <div className="absolute inset-0 opacity-[0.05] pointer-events-none" style={{ backgroundSize: '400px' }}></div>
       
       {/* Header */}
-      <div className="h-[60px] flex-shrink-0 bg-[var(--tg-bg-color)] flex items-center px-2 md:px-4 z-30 transition-colors relative md:border-l md:border-r border-[var(--tg-border-color)]">
+      <div className="h-[60px] flex-shrink-0 bg-[var(--tg-bg-color)] flex items-center px-2 md:px-4 z-30 relative md:border-l md:border-r border-[var(--tg-border-color)]">
         <button onClick={() => setActiveChatId(null)} className="md:hidden p-2 mr-1 text-[var(--tg-hint-color)] hover:bg-[var(--tg-secondary-bg-color)] rounded-full transition-colors flex-shrink-0"><ArrowLeft size={24} /></button>
         <div className="flex-grow flex items-center cursor-pointer overflow-hidden p-1 rounded-lg min-w-0" onClick={onOpenModelInfo}>
           <div className="w-10 h-10 rounded-full overflow-hidden bg-gradient-to-br from-blue-400 to-blue-600 flex-shrink-0 flex items-center justify-center text-white font-semibold text-lg mr-3 shadow-sm">
             {activePersona.avatar ? <img src={activePersona.avatar} className="w-full h-full object-cover" /> : activePersona.name.charAt(0).toUpperCase()}
           </div>
           <div className="flex flex-col flex-grow min-w-0">
-            <h2 className="font-semibold text-[var(--tg-text-color)] text-[16px] leading-tight truncate">{activePersona.name}</h2>
-            <span className="text-[13px] font-medium transition-colors duration-300 truncate" style={{ color: (displayIsGenerating || statusOverride === 'online') ? 'var(--tg-link-color)' : 'var(--tg-status-color)' }}>{displayIsGenerating ? 'typing...' : (statusOverride === 'online' ? 'online' : lastSeenStatus)}</span>
+            {isRenaming ? (
+              <input
+                autoFocus
+                className="bg-[var(--tg-secondary-bg-color)] text-[var(--tg-text-color)] text-[16px] font-semibold outline-none border-b border-[var(--tg-link-color)] w-full"
+                value={tempChatName}
+                onChange={(e) => setTempChatName(e.target.value)}
+                onBlur={submitRename}
+                onKeyDown={handleRenameKeyDown}
+                onClick={(e) => e.stopPropagation()}
+              />
+            ) : (
+              <h2 className="font-semibold text-[var(--tg-text-color)] text-[16px] leading-tight truncate">
+                {activeChat.name || activePersona.name}
+              </h2>
+            )}
+            <span className="text-[13px] font-medium truncate" style={{ color: (displayIsGenerating || statusOverride === 'online') ? 'var(--tg-link-color)' : 'var(--tg-status-color)' }}>{displayIsGenerating ? 'typing...' : (statusOverride === 'online' ? 'online' : lastSeenStatus)}</span>
           </div>
         </div>
         <div className="flex items-center gap-1 flex-shrink-0 ml-1">
@@ -593,6 +628,14 @@ const ChatArea = ({ onOpenModelInfo }) => {
                 <button className="mx-1 flex items-center gap-3 px-2 py-2 text-[var(--tg-text-color)] hover:bg-white/10 transition-colors rounded-xl text-[15px] opacity-50 cursor-default">
                   <CheckCheck size={18} className="text-[var(--tg-hint-color)]" />
                   <span>Select Messages</span>
+                </button>
+
+                <button 
+                  onClick={handleRenameChat}
+                  className="mx-1 flex items-center gap-3 px-2 py-2 text-[var(--tg-text-color)] hover:bg-white/10 transition-colors rounded-xl text-[15px]"
+                >
+                  <Edit2 size={18} className="text-[var(--tg-hint-color)]" />
+                  <span>Rename Chat</span>
                 </button>
 
                 <button 

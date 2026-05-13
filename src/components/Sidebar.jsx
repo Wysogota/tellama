@@ -223,7 +223,7 @@ const Sidebar = ({ onEditPersona, onOpenUserProfile }) => {
                   </div>
                   <div className="flex-grow min-w-0 flex flex-col justify-center h-full">
                     <div className="flex justify-between items-baseline mb-0.5">
-                      <h3 className="font-semibold truncate text-[16px]">{persona.name}</h3>
+                      <h3 className="font-semibold truncate text-[16px]">{session.name || persona.name}</h3>
                       {lastMsg && (
                          <span className={`text-[12px] ml-2 flex-shrink-0 ${isActive ? 'text-white/80' : 'text-[var(--tg-hint-color)]'}`}>
                            {new Date(lastMsg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}

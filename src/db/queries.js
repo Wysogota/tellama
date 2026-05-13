@@ -176,10 +176,10 @@ export async function getAllSessions() {
 export async function upsertSession(session) {
   const t = now();
   await db.exec(
-    `INSERT INTO chat_sessions (id, user_profile_id, persona_id, created_at, updated_at, sync_status)
-     VALUES (?, ?, ?, ?, ?, 'pending')
-     ON CONFLICT(id) DO UPDATE SET updated_at=excluded.updated_at, sync_status='pending'`,
-    [session.id, session.userProfileId, session.personaId, session.createdAt || t, t]
+    `INSERT INTO chat_sessions (id, user_profile_id, persona_id, name, created_at, updated_at, sync_status)
+     VALUES (?, ?, ?, ?, ?, ?, 'pending')
+     ON CONFLICT(id) DO UPDATE SET name=excluded.name, updated_at=excluded.updated_at, sync_status='pending'`,
+    [session.id, session.userProfileId, session.personaId, session.name || null, session.createdAt || t, t]
   );
 }
 
@@ -193,11 +193,19 @@ export async function applySessionFromServer(session) {
     return;
   }
   await db.exec(
-    `INSERT INTO chat_sessions (id, user_profile_id, persona_id, created_at, updated_at, sync_status)
-     VALUES (?, ?, ?, ?, ?, 'synced')
-     ON CONFLICT(id) DO UPDATE SET updated_at=excluded.updated_at, sync_status='synced'
+    `INSERT INTO chat_sessions (id, user_profile_id, persona_id, name, created_at, updated_at, sync_status)
+     VALUES (?, ?, ?, ?, ?, ?, 'synced')
+     ON CONFLICT(id) DO UPDATE SET name=excluded.name, updated_at=excluded.updated_at, sync_status='synced'
      WHERE excluded.updated_at > chat_sessions.updated_at`,
-    [session.id, session.userProfileId, session.personaId, session.createdAt, session.updatedAt]
+    [session.id, session.userProfileId, session.personaId, session.name || null, session.createdAt, session.updatedAt]
+  );
+}
+
+export async function updateSessionName(id, name) {
+  const t = now();
+  await db.exec(
+    `UPDATE chat_sessions SET name = ?, updated_at = ?, sync_status = 'pending' WHERE id = ?`,
+    [name, t, id]
   );
 }
 

@@ -403,17 +403,21 @@ export const AppProvider = ({ children }) => {
     sync.syncPush(SERVER_URL).catch(e => console.warn('[deletePersona] Immediate push failed:', e.message));
   };
 
-  const startChat = async (personaId) => {
-    const existingSession = chatSessions.find(s => s.persona_id === personaId && s.user_profile_id === activeUserProfileId);
-    if (existingSession) {
-      setActiveChatId(existingSession.id);
-      return existingSession.id;
+  const startChat = async (personaId, options = {}) => {
+    if (!options.forceNew) {
+      const existingSession = chatSessions.find(s => s.persona_id === personaId && s.user_profile_id === activeUserProfileId);
+      if (existingSession) {
+        setActiveChatId(existingSession.id);
+        return existingSession.id;
+      }
     }
+    
     const sessionId = uuidv4();
     const newSession = {
       id: sessionId,
       userProfileId: activeUserProfileId || userProfiles[0]?.id,
       personaId: personaId,
+      name: options.name || null,
       createdAt: Date.now(),
       updatedAt: Date.now()
     };
@@ -426,6 +430,7 @@ export const AppProvider = ({ children }) => {
       id: sessionId,
       user_profile_id: newSession.userProfileId,
       persona_id: newSession.personaId,
+      name: newSession.name,
       created_at: newSession.createdAt,
       updated_at: newSession.updatedAt
     };
@@ -435,6 +440,16 @@ export const AppProvider = ({ children }) => {
     // Push immediately so other browsers see the new session
     sync.syncPush(SERVER_URL).catch(e => console.warn('[startChat] Immediate push failed:', e.message));
     return sessionId;
+  };
+
+  const renameChat = async (chatId, newName) => {
+    try {
+      await queries.updateSessionName(chatId, newName);
+      setChatSessions(prev => prev.map(s => s.id === chatId ? { ...s, name: newName, updated_at: Date.now() } : s));
+      sync.syncPush(SERVER_URL).catch(e => console.warn('[renameChat] Immediate push failed:', e.message));
+    } catch (e) {
+      console.error('[renameChat] Failed:', e.message);
+    }
   };
 
   const deleteChat = async (chatId) => {
@@ -688,7 +703,7 @@ export const AppProvider = ({ children }) => {
     <AppContext.Provider value={{
       personas, chatSessions, activeChatId, setActiveChatId, messages, settings, allTags,
       userProfiles, activeUserProfileId, setActiveUserProfileId: changeActiveUserProfile,
-      addPersona, updatePersona, deletePersona, startChat, deleteChat,
+      addPersona, updatePersona, deletePersona, startChat, deleteChat, renameChat,
       addUserProfile, updateUserProfile, deleteUserProfile,
       addMessage, updateMessage, updateMessageMetadata, setFullMessageContent, deleteMessageNode, switchBranch, updateSettings,
       getNewAbortSignal, clearGeneration, isGlobalGenerating,

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { Search, Plus, Edit2, Trash2, ArrowLeft } from 'lucide-react';
+import { Search, Plus, Edit2, Trash2, ArrowLeft, MessageSquarePlus } from 'lucide-react';
 
 const ContactsPanel = ({ onBack, onEditPersona }) => {
   const { personas, startChat, deletePersona } = useAppContext();
@@ -11,8 +11,8 @@ const ContactsPanel = ({ onBack, onEditPersona }) => {
     p.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleStartChat = async (personaId) => {
-    await startChat(personaId);
+  const handleStartChat = async (personaId, forceNew = false) => {
+    await startChat(personaId, { forceNew });
     onBack(); 
   };
 
@@ -74,6 +74,13 @@ const ContactsPanel = ({ onBack, onEditPersona }) => {
               </div>
               
               <div className="flex items-center gap-0.5">
+                <button 
+                  onClick={() => handleStartChat(persona.id, true)}
+                  className="p-2 text-[var(--tg-link-color)] hover:bg-[var(--tg-sidebar-hover)] rounded-full transition-colors"
+                  title="New Chat"
+                >
+                  <MessageSquarePlus size={20} />
+                </button>
                 <button 
                   onClick={() => onEditPersona(persona.id)}
                   className="p-2 text-[var(--tg-hint-color)] hover:bg-[var(--tg-sidebar-hover)] rounded-full transition-colors"
