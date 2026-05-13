@@ -51,6 +51,7 @@ const Sidebar = ({ onEditPersona, onOpenUserProfile }) => {
 
   const sortedChats = React.useMemo(() => {
     return chatSessions
+      .filter(s => s.user_profile_id === activeUserProfileId)
       .map(session => ({
         session,
         persona: personas.find(p => p.id === session.persona_id),
@@ -62,7 +63,7 @@ const Sidebar = ({ onEditPersona, onOpenUserProfile }) => {
         const timeB = b.lastMsg ? b.lastMsg.timestamp : 0;
         return timeB - timeA;
       });
-  }, [chatSessions, personas, searchQuery, messages]);
+  }, [chatSessions, personas, searchQuery, messages, activeUserProfileId]);
 
   const createRipple = (event) => {
     const button = event.currentTarget;

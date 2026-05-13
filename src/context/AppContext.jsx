@@ -686,6 +686,12 @@ export const AppProvider = ({ children }) => {
   const changeActiveUserProfile = async (id) => {
     setActiveUserProfileId(id);
     await queries.setSyncMeta('active_user_id', id);
+    
+    // If current chat doesn't belong to the new profile, deselect it
+    const currentChat = chatSessions.find(s => s.id === activeChatId);
+    if (currentChat && currentChat.user_profile_id !== id) {
+      setActiveChatId(null);
+    }
   };
 
   if (isLoading) {
