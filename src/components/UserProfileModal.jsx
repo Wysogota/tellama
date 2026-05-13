@@ -38,13 +38,13 @@ const UserProfileModal = ({ onClose }) => {
     });
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!formData.name.trim()) return;
-    updateUserProfile(editingProfileId, formData);
+    await updateUserProfile(editingProfileId, formData);
   };
 
-  const handleActivate = () => {
-    handleSave();
+  const handleActivate = async () => {
+    await handleSave();
     setActiveUserProfileId(editingProfileId);
     onClose();
   };

@@ -46,6 +46,7 @@ const MainApp = () => {
             setEditingPersonaId(id);
             setShowPersonaForm(true);
           }}
+          onOpenUserProfile={() => setShowUserProfile(true)}
         />
       </div>
       

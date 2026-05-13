@@ -28,8 +28,6 @@ const ChatArea = ({ onOpenModelInfo }) => {
   const activeUser = userProfiles.find(p => p.id === activeUserProfileId) || userProfiles[0];
   const chatData = messages[activeChatId];
 
-
-
   // Compute linear path
   const activeMessages = React.useMemo(() => {
     if (!chatData || !chatData.rootId) return [];
@@ -46,12 +44,19 @@ const ChatArea = ({ onOpenModelInfo }) => {
     return path;
   }, [chatData]);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  const scrollToBottom = (instant = false) => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ 
+        behavior: instant ? 'auto' : 'smooth',
+        block: 'end'
+      });
+    }
   };
 
   useEffect(() => {
-    scrollToBottom();
+    if (wasAtBottomRef.current) {
+      scrollToBottom();
+    }
   }, [activeMessages.length, isGenerating]);
 
   useEffect(() => {
@@ -91,13 +96,7 @@ const ChatArea = ({ onOpenModelInfo }) => {
     return `last seen ${date.toLocaleDateString([], { day: 'numeric', month: 'short' })} at ${timeStr}`;
   }, [activeMessages]);
 
-  if (!activePersona) {
-    return (
-      <div className="flex-grow flex items-center justify-center h-full bg-[var(--tg-bg-color)] text-[var(--tg-hint-color)]">
-        <p className="px-4 py-2 bg-[var(--tg-secondary-bg-color)] rounded-full text-[14px]">Select a chat to start messaging</p>
-      </div>
-    );
-  }
+
 
   const startGeneration = async (historyToPass, parentNodeId) => {
     setIsGenerating(true);
@@ -197,6 +196,22 @@ const ChatArea = ({ onOpenModelInfo }) => {
     await startGeneration(historyToPass, userMsgId);
   };
 
+  const handleRegenerate = async (msg) => {
+    if (isGenerating) return;
+    const parentNodeId = msg.parentId;
+    
+    const historyToPass = [];
+    let curr = chatData.rootId;
+    while (curr && chatData.nodes[curr]) {
+      const node = chatData.nodes[curr];
+      historyToPass.push(node);
+      if (curr === parentNodeId) break;
+      const activeIdx = chatData.activeChildIndex[curr] || 0;
+      curr = node.childrenIds[activeIdx];
+    }
+    await startGeneration(historyToPass, parentNodeId);
+  };
+
   const handleEditSubmit = async (msg) => {
     if (!editingText.trim() || isGenerating) return;
     
@@ -218,6 +233,12 @@ const ChatArea = ({ onOpenModelInfo }) => {
         const activeIdx = chatData.activeChildIndex[curr] || 0;
         curr = node.childrenIds[activeIdx];
       }
+      
+      // Fallback check from original code
+      if (historyToPass.length === 0 || historyToPass[historyToPass.length - 1].id !== newMsgId) {
+        historyToPass.push({ sender: 'user', content: editingText });
+      }
+
       await startGeneration(historyToPass, newMsgId);
     }
   };
@@ -266,16 +287,6 @@ const ChatArea = ({ onOpenModelInfo }) => {
     e.target.value = '';
   };
 
-  const removeAttachment = (id) => {
-    setAttachments(prev => {
-      const att = prev.find(a => a.id === id);
-      if (att && att.previewUrl && att.previewUrl.startsWith('blob:')) {
-        URL.revokeObjectURL(att.previewUrl);
-      }
-      return prev.filter(a => a.id !== id);
-    });
-  };
-
   const handleDeleteChat = (e) => {
     e.stopPropagation();
     setIsMenuOpen(false);
@@ -284,26 +295,14 @@ const ChatArea = ({ onOpenModelInfo }) => {
     }
   };
 
-  const scrollToMessage = (id) => {
-    const element = document.getElementById(`msg-${id}`);
-    if (element) {
-      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      element.classList.add('bg-blue-500/10');
-      setTimeout(() => element.classList.remove('bg-blue-500/10'), 2000);
-    }
-    setIsSearchActive(false);
-    setChatSearchQuery('');
-  };
-
-  const searchResults = chatSearchQuery.trim() 
-    ? activeMessages.filter(m => m.content.toLowerCase().includes(chatSearchQuery.toLowerCase()))
-    : [];
-
-  const getFileIcon = (att) => {
-    if (att.type.startsWith('image/')) return <ImageIcon size={16} className="text-purple-400" />;
-    if (att.type.includes('javascript') || att.type.includes('python') || att.name.match(/\.(js|py|html|css|json)$/)) return <FileCode size={16} className="text-yellow-400" />;
-    if (att.type.includes('text') || att.name.match(/\.(txt|md)$/)) return <FileText size={16} className="text-blue-400" />;
-    return <File size={16} className="text-gray-400" />;
+  const removeAttachment = (id) => {
+    setAttachments(prev => {
+      const att = prev.find(a => a.id === id);
+      if (att && att.previewUrl && att.previewUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(att.previewUrl);
+      }
+      return prev.filter(a => a.id !== id);
+    });
   };
 
   const formatSize = (bytes) => {
@@ -349,6 +348,15 @@ const ChatArea = ({ onOpenModelInfo }) => {
     
     const isStartOfChain = !prevMsg || prevMsg.sender !== msg.sender;
     const isEndOfChain = !nextMsg || nextMsg.sender !== msg.sender;
+
+    // Branches helper data
+    let siblings = [];
+    let currentVariantIndex = 0;
+    if (msg.parentId && chatData.nodes[msg.parentId]) {
+      siblings = chatData.nodes[msg.parentId].childrenIds;
+      currentVariantIndex = chatData.activeChildIndex[msg.parentId] || 0;
+    }
+    const hasVariants = siblings.length > 1;
     
     if (isEditing) {
       return (
@@ -368,17 +376,17 @@ const ChatArea = ({ onOpenModelInfo }) => {
     
     return (
       <div key={msg.id} id={`msg-${msg.id}`} className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} group transition-colors duration-500 p-1 w-full relative`}>
-        <div className={`flex flex-col gap-1 max-w-[85%] ${isUser ? 'items-end' : 'items-start'}`}>
+        <div className={`flex flex-col gap-1 w-full max-w-[85%] max-w-[520px] ${isUser ? 'items-end' : 'items-start'}`}>
           {hasAttachments && (
             <div 
               style={{
                 borderTopLeftRadius: (isStartOfChain || isUser) ? '18px' : '4px',
                 borderTopRightRadius: (isStartOfChain || !isUser) ? '18px' : '4px',
                 borderBottomLeftRadius: (isEndOfChain && !msg.content || isUser) ? '18px' : '4px',
-                borderBottomRightRadius: (isEndOfChain && !msg.content || !isUser) ? '18px' : '4px'
+                borderBottomRightRadius: (isEndOfChain && !msg.content || !isUser) ? '18px' : '4px',
+                minWidth: '150px'
               }}
-              className={`flex flex-col shadow-sm relative transition-all duration-300 ${isUser ? 'bg-[var(--tg-chat-bubble-out)]' : 'bg-[var(--tg-chat-bubble-in)]'} p-1`}
-            >
+              className={`flex flex-col shadow-sm relative transition-all duration-300 ${isUser ? 'bg-[var(--tg-chat-bubble-out)] tg-bubble-out' : 'bg-[var(--tg-chat-bubble-in)] tg-bubble-in'} p-1`}            >
               {renderMessageAttachments(msg.stats.attachments)}
               {msg.content && (
                 <div className="px-3 py-1.5 whitespace-pre-wrap break-words text-[var(--tg-chat-bubble-in-text)]">
@@ -412,9 +420,8 @@ const ChatArea = ({ onOpenModelInfo }) => {
             return (
               <div 
                 key={`${msg.id}-p${pIdx}`} 
-                style={{ borderTopLeftRadius: tl, borderTopRightRadius: tr, borderBottomLeftRadius: bl, borderBottomRightRadius: br }}
-                className={`flex flex-col shadow-sm text-[15px] relative transition-all duration-300 ${isUser ? 'bg-[var(--tg-chat-bubble-out)] text-[var(--tg-chat-bubble-out-text)]' : 'bg-[var(--tg-chat-bubble-in)] text-[var(--tg-chat-bubble-in-text)]'} ${isVeryLastInChain ? (isUser ? 'tg-bubble-out-tail' : 'tg-bubble-in-tail') : ''}`}
-              >
+                style={{ borderTopLeftRadius: tl, borderTopRightRadius: tr, borderBottomLeftRadius: bl, borderBottomRightRadius: br, minWidth: '150px' }}
+                className={`flex flex-col shadow-sm text-[15px] relative transition-all duration-300 ${isUser ? 'bg-[var(--tg-chat-bubble-out)] text-[var(--tg-chat-bubble-out-text)] tg-bubble-out' : 'bg-[var(--tg-chat-bubble-in)] text-[var(--tg-chat-bubble-in-text)] tg-bubble-in'} ${isVeryLastInChain ? (isUser ? 'tg-bubble-out-tail' : 'tg-bubble-in-tail') : ''}`}              >
                 <div className="px-3 py-1.5 whitespace-pre-wrap break-words">{part}</div>
                 {isLastInThisMsg && (
                   <div className="px-3 pb-1 text-[11px] text-right mt-0 opacity-70 flex justify-end items-center">
@@ -427,33 +434,59 @@ const ChatArea = ({ onOpenModelInfo }) => {
           })}
         </div>
         
-        {/* Token and Speed Stats - Restored exactly as requested */}
-        <div className={`flex items-center gap-3 mt-1 opacity-0 group-hover:opacity-100 transition-opacity ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
+        <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'}`}>
           {!isEditing && (
             <>
-              <div className="flex items-center gap-2">
-                <button onClick={() => { setEditingMessageId(msg.id); setEditingText(msg.content); }} className="p-1 text-[var(--tg-hint-color)] hover:bg-[var(--tg-secondary-bg-color)] rounded transition-colors"><Edit2 size={14} /></button>
-                <button onClick={() => deleteMessageNode(activeChatId, msg.id)} className="p-1 text-red-500 hover:bg-red-500/10 rounded transition-colors"><Trash2 size={14} /></button>
-              </div>
-              
-              {msg.stats && (
-                (isUser && msg.stats.promptTokens > 0) || 
-                (!isUser && (msg.stats.completionTokens > 0 || msg.stats.speed > 0))
-              ) && (
-                <div className="text-[10px] text-[var(--tg-hint-color)] flex items-center gap-2 px-1">
-                  {isUser ? (
-                    <span>{msg.stats.promptTokens} tkn</span>
-                  ) : (
-                    <>
-                      {msg.stats.completionTokens > 0 && <span>{msg.stats.completionTokens} tkn</span>}
-                      {msg.stats.speed > 0 && (
-                        <>
-                          <span className="opacity-30">|</span>
-                          <span>{msg.stats.speed?.toFixed(1)} t/s</span>
-                        </>
-                      )}
-                    </>
+              <div className={`flex items-center gap-3 mt-1 opacity-0 group-hover:opacity-100 transition-opacity ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => { setEditingMessageId(msg.id); setEditingText(msg.content); }} className="p-1 text-[var(--tg-hint-color)] hover:bg-[var(--tg-secondary-bg-color)] rounded transition-colors" title="Edit"><Edit2 size={14} /></button>
+                  {!isUser && (
+                    <button onClick={() => handleRegenerate(msg)} className="p-1 text-[var(--tg-hint-color)] hover:bg-[var(--tg-secondary-bg-color)] rounded transition-colors" title="Regenerate">
+                      <RotateCcw size={14} />
+                    </button>
                   )}
+                  <button onClick={() => deleteMessageNode(activeChatId, msg.id)} className="p-1 text-red-500 hover:bg-red-500/10 rounded transition-colors" title="Delete"><Trash2 size={14} /></button>
+                </div>
+                
+                {msg.stats && (
+                  (isUser && msg.stats.promptTokens > 0) || 
+                  (!isUser && (msg.stats.completionTokens > 0 || msg.stats.speed > 0))
+                ) && (
+                  <div className="text-[10px] text-[var(--tg-hint-color)] flex items-center gap-2 px-1">
+                    {isUser ? (
+                      <span>{msg.stats.promptTokens} tkn</span>
+                    ) : (
+                      <>
+                        {msg.stats.completionTokens > 0 && <span>{msg.stats.completionTokens} tkn</span>}
+                        {msg.stats.speed > 0 && (
+                          <>
+                            <span className="opacity-30">|</span>
+                            <span>{msg.stats.speed?.toFixed(1)} t/s</span>
+                          </>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {hasVariants && (
+                <div className={`flex items-center gap-2 mt-1 text-xs text-[var(--tg-hint-color)] ${isUser ? 'mr-2' : 'ml-2'}`}>
+                  <button 
+                    onClick={() => switchBranch(activeChatId, msg.parentId, Math.max(0, currentVariantIndex - 1))}
+                    disabled={currentVariantIndex === 0}
+                    className="hover:text-[var(--tg-text-color)] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <ChevronLeft size={14} />
+                  </button>
+                  <span className="font-medium">{currentVariantIndex + 1} / {siblings.length}</span>
+                  <button 
+                    onClick={() => switchBranch(activeChatId, msg.parentId, Math.min(siblings.length - 1, currentVariantIndex + 1))}
+                    disabled={currentVariantIndex === siblings.length - 1}
+                    className="hover:text-[var(--tg-text-color)] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <ChevronRight size={14} />
+                  </button>
                 </div>
               )}
             </>
@@ -463,9 +496,75 @@ const ChatArea = ({ onOpenModelInfo }) => {
     );
   };
 
+  const scrollToMessage = (id) => {
+    const element = document.getElementById(`msg-${id}`);
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      element.classList.add('bg-blue-500/10');
+      setTimeout(() => element.classList.remove('bg-blue-500/10'), 2000);
+    }
+    setIsSearchActive(false);
+    setChatSearchQuery('');
+  };
+
+  const searchResults = chatSearchQuery.trim() 
+    ? activeMessages.filter(m => m.content.toLowerCase().includes(chatSearchQuery.toLowerCase()))
+    : [];
+
+  const getFileIcon = (att) => {
+    if (att.type.startsWith('image/')) return <ImageIcon size={16} className="text-purple-400" />;
+    if (att.type.includes('javascript') || att.type.includes('python') || att.name.match(/\.(js|py|html|css|json)$/)) return <FileCode size={16} className="text-yellow-400" />;
+    if (att.type.includes('text') || att.name.match(/\.(txt|md)$/)) return <FileText size={16} className="text-blue-400" />;
+    return <File size={16} className="text-gray-400" />;
+  };
+
+  const containerRef = useRef(null);
+  const wasAtBottomRef = useRef(true);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = container;
+      wasAtBottomRef.current = scrollHeight - scrollTop - clientHeight < 100;
+    };
+
+    const resizeObserver = new ResizeObserver(() => {
+      if (wasAtBottomRef.current) {
+        scrollToBottom(true);
+      }
+    });
+
+    container.addEventListener('scroll', handleScroll);
+    const messagesList = container.querySelector('.messages-list-container');
+    if (messagesList) {
+      resizeObserver.observe(messagesList);
+    }
+
+    return () => {
+      container.removeEventListener('scroll', handleScroll);
+      resizeObserver.disconnect();
+    };
+  }, []);
+  if (!activePersona) {
+    return (
+      <div className="flex-grow flex flex-col h-full bg-transparent relative overflow-hidden">
+        <div className="h-[60px] w-full bg-[var(--tg-bg-color)] flex-shrink-0 z-10 md:border-l md:border-r border-[var(--tg-border-color)]"></div>
+        <div className="flex-grow flex items-center justify-center relative">
+          <div className="absolute inset-0 bg-cover bg-center bg-no-repeat" style={{ backgroundImage: 'var(--tg-chat-bg-image)' }}></div>
+          <div className="bg-[var(--tg-bg-color)] px-4 py-1.5 rounded-full text-sm text-[var(--tg-hint-color)] shadow-sm z-10">
+            Select a chat to start messaging
+          </div>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="flex-grow flex flex-col h-full bg-transparent relative overflow-hidden">
       <div className="absolute inset-0 opacity-[0.05] pointer-events-none" style={{ backgroundSize: '400px' }}></div>
+      
+      {/* Header */}
       <div className="h-[60px] flex-shrink-0 bg-[var(--tg-bg-color)] flex items-center px-2 md:px-4 z-30 transition-colors relative md:border-l md:border-r border-[var(--tg-border-color)]">
         <button onClick={() => setActiveChatId(null)} className="md:hidden p-2 mr-1 text-[var(--tg-hint-color)] hover:bg-[var(--tg-secondary-bg-color)] rounded-full transition-colors flex-shrink-0"><ArrowLeft size={24} /></button>
         <div className="flex-grow flex items-center cursor-pointer overflow-hidden p-1 rounded-lg min-w-0" onClick={onOpenModelInfo}>
@@ -481,27 +580,89 @@ const ChatArea = ({ onOpenModelInfo }) => {
           <button onClick={() => setIsSearchActive(!isSearchActive)} className={`p-2 rounded-full transition-colors ${isSearchActive ? 'bg-[var(--tg-secondary-bg-color)] text-[var(--tg-link-color)]' : 'text-[var(--tg-hint-color)] hover:bg-[var(--tg-secondary-bg-color)]'}`}><Search size={20} /></button>
           <div className="relative" ref={menuRef}>
             <button onClick={() => setIsMenuOpen(!isMenuOpen)} className={`p-2 text-[var(--tg-hint-color)] hover:bg-[var(--tg-secondary-bg-color)] rounded-full transition-colors ${isMenuOpen ? 'bg-[var(--tg-secondary-bg-color)] text-[var(--tg-link-color)]' : ''}`}><MoreVertical size={20} /></button>
-            {isMenuOpen && <div className="absolute right-0 top-[100%] mt-2 w-64 bg-[var(--tg-search-bg)] border border-[var(--tg-border-color)] rounded-xl shadow-2xl overflow-hidden z-50 py-2 flex flex-col gap-1"><button onClick={handleDeleteChat} className="mx-1 flex items-center gap-3 px-2 py-2 text-red-500 hover:bg-red-500/10 transition-colors rounded-xl text-[15px]"><Trash2 size={18} /><span>Delete Chat</span></button></div>}
+            {isMenuOpen && (
+              <div className="absolute right-0 top-[100%] mt-2 w-64 bg-[var(--tg-search-bg)] border border-[var(--tg-border-color)] rounded-xl shadow-2xl overflow-hidden z-50 py-2 transition-all flex flex-col gap-1">
+                <button className="mx-1 flex items-center justify-between px-2 py-2 text-[var(--tg-text-color)] hover:bg-white/10 transition-colors rounded-xl text-[15px] opacity-50 cursor-default">
+                  <div className="flex items-center gap-3">
+                    <RotateCcw size={18} className="text-[var(--tg-hint-color)]" />
+                    <span>Auto-delete</span>
+                  </div>
+                  <ChevronRight size={16} className="text-[var(--tg-hint-color)]" />
+                </button>
+                
+                <button className="mx-1 flex items-center gap-3 px-2 py-2 text-[var(--tg-text-color)] hover:bg-white/10 transition-colors rounded-xl text-[15px] opacity-50 cursor-default">
+                  <CheckCheck size={18} className="text-[var(--tg-hint-color)]" />
+                  <span>Select Messages</span>
+                </button>
+
+                <button 
+                  onClick={handleDeleteChat}
+                  className="mx-1 flex items-center gap-3 px-2 py-2 text-red-500 hover:bg-red-500/10 transition-colors rounded-xl text-[15px]"
+                >
+                  <Trash2 size={18} />
+                  <span>Delete Chat</span>
+                </button>
+              </div>
+            )}
           </div>
         </div>
         {isSearchActive && (
           <div className="absolute inset-0 bg-[var(--tg-bg-color)] z-40 flex flex-col animate-in fade-in duration-200">
-            <div className="h-[60px] flex items-center px-2 md:px-4 flex-shrink-0 md:border-l md:border-r border-[var(--tg-border-color)]">
+            <div className="h-[60px] flex items-center px-2 md:px-4 flex-shrink-0">
+              <button className="md:hidden p-2 mr-1 opacity-0 pointer-events-none flex-shrink-0">
+                <ArrowLeft size={24} />
+              </button>
               <div className="p-1 flex items-center mr-2 flex-shrink-0"><div className="w-10 h-10 rounded-full overflow-hidden bg-gradient-to-br from-blue-400 to-blue-600 flex-shrink-0 flex items-center justify-center text-white font-semibold text-lg shadow-sm">{activePersona.avatar ? <img src={activePersona.avatar} className="w-full h-full object-cover" /> : activePersona.name.charAt(0).toUpperCase()}</div></div>
               <div className="flex-grow flex items-center h-full relative min-w-0" ref={searchContainerRef}>
                 <div className={`flex-grow flex items-center h-[40px] px-4 transition-all duration-200 min-w-0 ${isSearchFocused ? 'bg-[var(--tg-search-bg-focused)] shadow-[0_2px_8px_rgba(0,0,0,0.2)]' : 'bg-[var(--tg-search-bg)]'} ${chatSearchQuery.trim() && showSearchResults ? 'rounded-t-[20px]' : 'rounded-full'}`}><Search size={18} className="mr-3 text-[var(--tg-hint-color)] flex-shrink-0" /><input autoFocus type="text" className="flex-grow bg-transparent text-[var(--tg-text-color)] text-[16px] outline-none caret-[var(--tg-link-color)]" placeholder="Search" value={chatSearchQuery} onChange={(e) => { setChatSearchQuery(e.target.value); setShowSearchResults(true); }} onFocus={() => { setIsSearchFocused(true); setShowSearchResults(true); }} onBlur={() => setIsSearchFocused(false)} /></div>
                 {chatSearchQuery.trim() && showSearchResults && (<div className={`absolute top-[50px] left-0 right-0 max-h-[400px] overflow-y-auto shadow-2xl rounded-b-2xl z-50 custom-scrollbar transition-all duration-300 origin-top bg-[var(--tg-search-bg)] ${isSearchFocused ? 'bg-[var(--tg-search-bg-focused)]' : ''}`}>{searchResults.length > 0 ? (<div className="flex flex-col py-2 gap-1">{searchResults.map((msg) => (<div key={msg.id} onClick={() => scrollToMessage(msg.id)} className="flex items-center mx-1 px-2 py-2 hover:bg-white/10 cursor-pointer transition-colors rounded-xl"><div className="w-10 h-10 rounded-full overflow-hidden bg-blue-500/20 flex-shrink-0 mr-3">{(msg.sender === 'user' ? activeUser : activePersona)?.avatar ? <img src={(msg.sender === 'user' ? activeUser : activePersona).avatar} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-blue-500 font-bold">{(msg.sender === 'user' ? activeUser : activePersona)?.name?.charAt(0).toUpperCase()}</div>}</div><div className="flex-grow min-w-0"><div className="flex justify-between items-baseline"><span className="font-semibold text-[15px] truncate text-[var(--tg-text-color)]">{(msg.sender === 'user' ? activeUser : activePersona)?.name}</span><span className="text-[12px] text-[var(--tg-hint-color)] ml-2 flex-shrink-0">{new Date(msg.timestamp).toLocaleDateString()}</span></div><p className="text-[14px] text-[var(--tg-hint-color)] truncate">{msg.content}</p></div></div>))}</div>) : <div className="p-8 text-center text-[var(--tg-hint-color)]">No results found</div>}</div>)}
               </div>
               <button onClick={() => { setIsSearchActive(false); setChatSearchQuery(''); }} className="p-2 text-[var(--tg-hint-color)] hover:bg-[var(--tg-secondary-bg-color)] rounded-full transition-colors"><X size={20} /></button>
+              <button className="p-2 text-[var(--tg-hint-color)] hover:bg-[var(--tg-secondary-bg-color)] rounded-full transition-colors">
+                <Calendar size={20} />
+              </button>
             </div>
           </div>
         )}
       </div>
 
-      <div className="flex-grow overflow-y-auto z-10 custom-scrollbar">
-        <div className="max-w-[720px] mx-auto w-full p-4 flex flex-col">
+      <div 
+        ref={containerRef} 
+        className="flex-grow overflow-y-auto z-10 custom-scrollbar"
+        style={{ overflowAnchor: 'auto' }}
+      >
+        <div className="max-w-[720px] mx-auto w-full p-4 flex flex-col space-y-2 messages-list-container">
           {activeMessages.map((msg, idx) => renderMessageBubbles(msg, activeMessages[idx-1], activeMessages[idx+1]))}
-          {displayIsGenerating && <div className="flex flex-col gap-1 max-w-[80%] items-start self-start group p-1"><div className="rounded-[18px] rounded-bl-[4px] px-3 py-1.5 shadow-sm text-[15px] bg-[var(--tg-chat-bubble-in)] text-[var(--tg-chat-bubble-in-text)]">{displayStreamingText || <Loader2 size={16} className="animate-spin text-[var(--tg-link-color)]" />}</div></div>}
+          
+          {/* Detailed Thinking / Loading State - Restored */}
+          {displayIsGenerating && !displayStreamingText && (
+            <div className="flex justify-start p-1">
+              <div className="max-w-[80%] rounded-[18px] px-4 py-2.5 shadow-sm bg-[var(--tg-chat-bubble-in)] text-[var(--tg-chat-bubble-in-text)] rounded-bl-[4px] flex items-center animate-in fade-in duration-300 tg-bubble-in tg-bubble-in-tail">
+                <Loader2 size={16} className="animate-spin text-[var(--tg-link-color)] mr-3" />
+                <span className="text-[15px] font-medium text-[var(--tg-hint-color)]">Thinking...</span>
+              </div>
+            </div>
+          )}
+          
+          {/* Streaming Text State - Restored with paragraphs */}
+          {displayIsGenerating && displayStreamingText && (
+            <div className="flex flex-col gap-1 max-w-[80%] items-start self-start group p-1">
+              {displayStreamingText.split(/\n\s*\n/).map((paragraph, pIdx, arr) => (
+                <div 
+                  key={pIdx}
+                  className={`rounded-[18px] px-3 py-1.5 shadow-sm text-[15px] bg-[var(--tg-chat-bubble-in)] text-[var(--tg-chat-bubble-in-text)] relative whitespace-pre-wrap break-words tg-bubble-in ${
+                    pIdx === arr.length - 1 ? 'rounded-bl-[4px] tg-bubble-in-tail' : ''
+                  }`}
+                >
+                  {paragraph}
+                  {pIdx === arr.length - 1 && (
+                    <span className="inline-block w-1.5 h-4 bg-[var(--tg-link-color)] ml-1 animate-pulse align-middle" />
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          
           <div ref={messagesEndRef} />
         </div>
       </div>

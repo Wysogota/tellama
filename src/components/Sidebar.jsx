@@ -4,7 +4,7 @@ import { Search, Users, Menu, Plus, Bookmark, Archive, Moon, Settings, Pencil } 
 import ContactsPanel from './ContactsPanel';
 import SettingsPanel from './SettingsPanel';
 
-const Sidebar = ({ onEditPersona }) => {
+const Sidebar = ({ onEditPersona, onOpenUserProfile }) => {
   const { 
     personas, chatSessions, activeChatId, setActiveChatId, 
     messages, userProfiles, activeUserProfileId, setActiveUserProfileId, 
@@ -36,12 +36,33 @@ const Sidebar = ({ onEditPersona }) => {
     setIsMenuOpen(false);
   };
 
-  const filteredChats = chatSessions
-    .map(session => ({
-      session,
-      persona: personas.find(p => p.id === session.persona_id)
-    }))
-    .filter(({ persona }) => persona && persona.name.toLowerCase().includes(searchQuery.toLowerCase()));
+  const getChatLastMessage = (sessionId) => {
+    const chatData = messages[sessionId];
+    if (!chatData || !chatData.rootId) return null;
+    let curr = chatData.rootId;
+    let last = null;
+    while (curr && chatData.nodes[curr]) {
+      last = chatData.nodes[curr];
+      const activeIdx = chatData.activeChildIndex[curr] || 0;
+      curr = last.childrenIds[activeIdx];
+    }
+    return last;
+  };
+
+  const sortedChats = React.useMemo(() => {
+    return chatSessions
+      .map(session => ({
+        session,
+        persona: personas.find(p => p.id === session.persona_id),
+        lastMsg: getChatLastMessage(session.id)
+      }))
+      .filter(({ persona }) => persona && persona.name.toLowerCase().includes(searchQuery.toLowerCase()))
+      .sort((a, b) => {
+        const timeA = a.lastMsg ? a.lastMsg.timestamp : 0;
+        const timeB = b.lastMsg ? b.lastMsg.timestamp : 0;
+        return timeB - timeA;
+      });
+  }, [chatSessions, personas, searchQuery, messages]);
 
   const createRipple = (event) => {
     const button = event.currentTarget;
@@ -103,7 +124,10 @@ const Sidebar = ({ onEditPersona }) => {
                     ))}
                     
                     <button
-                      onClick={handleAddProfile}
+                      onClick={() => {
+                        onOpenUserProfile();
+                        setIsMenuOpen(false);
+                      }}
                       className="w-full flex items-center px-3 py-2 rounded-xl hover:bg-[var(--tg-sidebar-hover)] text-[var(--tg-text-color)] transition-colors mt-1"
                     >
                       <div className="w-8 h-8 rounded-full bg-[var(--tg-secondary-bg-color)] flex items-center justify-center mr-3 text-[var(--tg-hint-color)]">
@@ -174,19 +198,7 @@ const Sidebar = ({ onEditPersona }) => {
           </div>
 
           <div className="flex-grow overflow-y-auto px-2 py-1 custom-scrollbar">
-            {filteredChats.map(({ session, persona }) => {
-              const chatData = messages[session.id];
-              let lastMessage = null;
-              
-              if (chatData && chatData.rootId) {
-                let curr = chatData.rootId;
-                while (curr && chatData.nodes[curr]) {
-                  lastMessage = chatData.nodes[curr];
-                  const activeIdx = chatData.activeChildIndex[curr] || 0;
-                  curr = lastMessage.childrenIds[activeIdx];
-                }
-              }
-
+            {sortedChats.map(({ session, persona, lastMsg }) => {
               const isActive = activeChatId === session.id;
 
               return (
@@ -212,14 +224,14 @@ const Sidebar = ({ onEditPersona }) => {
                   <div className="flex-grow min-w-0 flex flex-col justify-center h-full">
                     <div className="flex justify-between items-baseline mb-0.5">
                       <h3 className="font-semibold truncate text-[16px]">{persona.name}</h3>
-                      {lastMessage && (
-                        <span className={`text-[12px] ml-2 flex-shrink-0 ${isActive ? 'text-white/80' : 'text-[var(--tg-hint-color)]'}`}>
-                          {new Date(lastMessage.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                        </span>
+                      {lastMsg && (
+                         <span className={`text-[12px] ml-2 flex-shrink-0 ${isActive ? 'text-white/80' : 'text-[var(--tg-hint-color)]'}`}>
+                           {new Date(lastMsg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                         </span>
                       )}
                     </div>
                     <p className={`text-[15px] truncate ${isActive ? 'text-white/90' : 'text-[var(--tg-hint-color)]'}`}>
-                      {lastMessage ? lastMessage.content : 'No messages yet'}
+                      {lastMsg ? lastMsg.content : 'No messages yet'}
                     </p>
                   </div>
                 </div>
