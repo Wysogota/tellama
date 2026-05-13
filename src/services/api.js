@@ -254,6 +254,8 @@ export const generateChatResponse = async (
     let speed = 0;
     let isExact = false;
 
+    const modelUsed = settings.modelName || (provider === 'llamacpp' ? 'llama.cpp' : provider);
+
     if (timings) {
       // llama.cpp precise timings
       speed = timings.predicted_per_second || 0;
@@ -262,7 +264,7 @@ export const generateChatResponse = async (
       isExact = true;
       return {
         content: fullContent,
-        stats: { promptTokens, completionTokens: ct, durationMs, speed, isExact },
+        stats: { promptTokens, completionTokens: ct, durationMs, speed, isExact, model: modelUsed },
       };
     } else if (completionTokens > 0) {
       speed = completionTokens / (durationMs / 1000);
@@ -271,7 +273,7 @@ export const generateChatResponse = async (
 
     return {
       content: fullContent,
-      stats: { promptTokens, completionTokens, durationMs, speed, isExact },
+      stats: { promptTokens, completionTokens, durationMs, speed, isExact, model: modelUsed },
     };
 
   } catch (error) {

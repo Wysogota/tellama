@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { Paperclip, SendHorizontal, MoreVertical, Loader2, Edit2, Trash2, RotateCcw, ChevronLeft, ChevronRight, ArrowLeft, CheckCheck, Check, Smile, Mic, Search, X, Calendar, FileText, Image as ImageIcon, XCircle, FileCode, FileType, File, Download, Maximize2 } from 'lucide-react';
+import { Paperclip, SendHorizontal, MoreVertical, Loader2, Edit2, Trash2, RotateCcw, ChevronLeft, ChevronRight, ArrowLeft, CheckCheck, Check, Smile, Mic, Search, X, Calendar, FileText, Image as ImageIcon, XCircle, FileCode, FileType, File, Download, Maximize2, Reply, Copy, Languages, Pin, Forward, CheckCircle2 } from 'lucide-react';
 import { generateChatResponse } from '../services/api';
 
 const ChatArea = ({ onOpenModelInfo }) => {
@@ -19,6 +19,7 @@ const ChatArea = ({ onOpenModelInfo }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isRenaming, setIsRenaming] = useState(false);
   const [tempChatName, setTempChatName] = useState('');
+  const [contextMenu, setContextMenu] = useState(null); // { x, y, msg }
   
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -69,10 +70,13 @@ const ChatArea = ({ onOpenModelInfo }) => {
       if (searchContainerRef.current && !searchContainerRef.current.contains(event.target)) {
         setShowSearchResults(false);
       }
+      if (contextMenu) {
+        setContextMenu(null);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  }, [contextMenu]);
 
   const [streamingText, setStreamingText] = useState('');
   const [streamingParentId, setStreamingParentId] = useState(null);
@@ -326,6 +330,20 @@ const ChatArea = ({ onOpenModelInfo }) => {
     });
   };
 
+  const handleContextMenu = (e, msg) => {
+    e.preventDefault();
+    setContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      msg
+    });
+  };
+
+  const handleCopyText = (text) => {
+    navigator.clipboard.writeText(text);
+    setContextMenu(null);
+  };
+
   const formatSize = (bytes) => {
     if (bytes < 1024) return bytes + ' B';
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
@@ -400,6 +418,7 @@ const ChatArea = ({ onOpenModelInfo }) => {
         <div className={`flex flex-col gap-1 w-full max-w-[85%] max-w-[520px] ${isUser ? 'items-end' : 'items-start'}`}>
           {hasAttachments && (
             <div 
+              onContextMenu={(e) => handleContextMenu(e, msg)}
               style={{
                 borderTopLeftRadius: (isStartOfChain || isUser) ? '18px' : '4px',
                 borderTopRightRadius: (isStartOfChain || !isUser) ? '18px' : '4px',
@@ -407,7 +426,7 @@ const ChatArea = ({ onOpenModelInfo }) => {
                 borderBottomRightRadius: (isEndOfChain && !msg.content || !isUser) ? '18px' : '4px',
                 minWidth: '150px'
               }}
-              className={`flex flex-col shadow-sm relative transition-all duration-300 ${isUser ? 'bg-[var(--tg-chat-bubble-out)] tg-bubble-out' : 'bg-[var(--tg-chat-bubble-in)] tg-bubble-in'} p-1`}            >
+              className={`flex flex-col shadow-sm relative transition-all duration-300 ${isUser ? 'bg-[var(--tg-chat-bubble-out)] tg-bubble-out' : 'bg-[var(--tg-chat-bubble-in)] tg-bubble-in'} p-1 select-none`}            >
               {renderMessageAttachments(msg.stats.attachments)}
               {msg.content && (
                 <div className="px-3 py-1.5 whitespace-pre-wrap break-words text-[var(--tg-chat-bubble-in-text)]">
@@ -441,8 +460,9 @@ const ChatArea = ({ onOpenModelInfo }) => {
             return (
               <div 
                 key={`${msg.id}-p${pIdx}`} 
+                onContextMenu={(e) => handleContextMenu(e, msg)}
                 style={{ borderTopLeftRadius: tl, borderTopRightRadius: tr, borderBottomLeftRadius: bl, borderBottomRightRadius: br, minWidth: '150px' }}
-                className={`flex flex-col shadow-sm text-[15px] relative transition-all duration-300 ${isUser ? 'bg-[var(--tg-chat-bubble-out)] text-[var(--tg-chat-bubble-out-text)] tg-bubble-out' : 'bg-[var(--tg-chat-bubble-in)] text-[var(--tg-chat-bubble-in-text)] tg-bubble-in'} ${isVeryLastInChain ? (isUser ? 'tg-bubble-out-tail' : 'tg-bubble-in-tail') : ''}`}              >
+                className={`flex flex-col shadow-sm text-[15px] relative transition-all duration-300 ${isUser ? 'bg-[var(--tg-chat-bubble-out)] text-[var(--tg-chat-bubble-out-text)] tg-bubble-out' : 'bg-[var(--tg-chat-bubble-in)] text-[var(--tg-chat-bubble-in-text)] tg-bubble-in'} ${isVeryLastInChain ? (isUser ? 'tg-bubble-out-tail' : 'tg-bubble-in-tail') : ''} select-none`}              >
                 <div className="px-3 py-1.5 whitespace-pre-wrap break-words">{part}</div>
                 {isLastInThisMsg && (
                   <div className="px-3 pb-1 text-[11px] text-right mt-0 opacity-70 flex justify-end items-center">
@@ -458,17 +478,7 @@ const ChatArea = ({ onOpenModelInfo }) => {
         <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'}`}>
           {!isEditing && (
             <>
-              <div className={`flex items-center gap-3 mt-1 opacity-0 group-hover:opacity-100 transition-opacity ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
-                <div className="flex items-center gap-2">
-                  <button onClick={() => { setEditingMessageId(msg.id); setEditingText(msg.content); }} className="p-1 text-[var(--tg-hint-color)] hover:bg-[var(--tg-secondary-bg-color)] rounded transition-colors" title="Edit"><Edit2 size={14} /></button>
-                  {!isUser && (
-                    <button onClick={() => handleRegenerate(msg)} className="p-1 text-[var(--tg-hint-color)] hover:bg-[var(--tg-secondary-bg-color)] rounded transition-colors" title="Regenerate">
-                      <RotateCcw size={14} />
-                    </button>
-                  )}
-                  <button onClick={() => deleteMessageNode(activeChatId, msg.id)} className="p-1 text-red-500 hover:bg-red-500/10 rounded transition-colors" title="Delete"><Trash2 size={14} /></button>
-                </div>
-                
+              <div className={`flex items-center gap-3 mt-1 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
                 {msg.stats && (
                   (isUser && msg.stats.promptTokens > 0) || 
                   (!isUser && (msg.stats.completionTokens > 0 || msg.stats.speed > 0))
@@ -723,6 +733,91 @@ const ChatArea = ({ onOpenModelInfo }) => {
       </div>
 
       {previewFile && (<div className="fixed inset-0 z-[100] bg-black/90 flex flex-col animate-in fade-in duration-300" onClick={() => setPreviewFile(null)}><div className="h-[60px] flex items-center justify-between px-6 bg-gradient-to-b from-black/50 to-transparent"><div className="flex flex-col text-white"><span className="font-medium truncate max-w-[300px]">{previewFile.name}</span><span className="text-gray-400 text-[12px]">{formatSize(previewFile.size)}</span></div><div className="flex gap-4"><button className="p-2 text-white hover:bg-white/10 rounded-full transition-colors"><Download size={22} /></button><button onClick={() => setPreviewFile(null)} className="p-2 text-white hover:bg-white/10 rounded-full transition-colors"><X size={24} /></button></div></div><div className="flex-grow flex items-center justify-center p-4 overflow-hidden" onClick={e => e.stopPropagation()}>{previewFile.type.startsWith('image/') ? <img src={previewFile.dataUrl || previewFile.previewUrl} className="max-w-full max-h-full object-contain shadow-2xl rounded-lg animate-in zoom-in-95 duration-300" /> : <div className="w-full max-w-4xl h-full bg-[#1e1e1e] rounded-xl shadow-2xl border border-white/10 flex flex-col overflow-hidden animate-in slide-in-from-bottom-4"><div className="h-10 bg-white/5 border-b border-white/10 flex items-center px-4"><div className="flex items-center gap-2">{getFileIcon(previewFile)}<span className="text-gray-400 text-xs uppercase">{previewFile.name.split('.').pop()} File</span></div></div><div className="flex-grow overflow-auto p-6 custom-scrollbar">{previewFile.content ? <pre className="text-gray-300 font-mono text-[14px] leading-relaxed whitespace-pre-wrap">{previewFile.content}</pre> : <div className="h-full flex flex-col items-center justify-center text-gray-500 gap-4"><File size={64} strokeWidth={1} /><span>No text preview available</span></div>}</div></div>}</div></div>)}
+
+      {contextMenu && (
+        <div 
+          className="fixed z-[1000] w-48 bg-[var(--tg-bg-color)] rounded-2xl shadow-2xl overflow-hidden py-1 flex flex-col animate-in zoom-in-95 duration-100"
+          style={{ 
+            left: Math.min(contextMenu.x, window.innerWidth - 200), 
+            top: Math.min(contextMenu.y, window.innerHeight - 400) 
+          }}
+          onMouseDown={e => e.stopPropagation()}
+        >
+          <button className="flex items-center gap-3 px-3 py-1.5 hover:bg-[var(--tg-secondary-bg-color)] text-[var(--tg-text-color)] transition-colors text-[14px] group">
+            <Reply size={18} className="text-[var(--tg-hint-color)] group-hover:text-[var(--tg-link-color)] transition-colors" />
+            <span className="flex-grow text-left">Reply</span>
+          </button>
+
+          <button 
+            onClick={() => { setEditingMessageId(contextMenu.msg.id); setEditingText(contextMenu.msg.content); setContextMenu(null); }}
+            className="flex items-center gap-3 px-3 py-1.5 hover:bg-[var(--tg-secondary-bg-color)] text-[var(--tg-text-color)] transition-colors text-[14px] group"
+          >
+            <Edit2 size={18} className="text-[var(--tg-hint-color)] group-hover:text-[var(--tg-link-color)] transition-colors" />
+            <span className="flex-grow text-left">Edit</span>
+          </button>
+
+          <button 
+            onClick={() => handleCopyText(contextMenu.msg.content)}
+            className="flex items-center gap-3 px-3 py-1.5 hover:bg-[var(--tg-secondary-bg-color)] text-[var(--tg-text-color)] transition-colors text-[14px] group"
+          >
+            <Copy size={18} className="text-[var(--tg-hint-color)] group-hover:text-[var(--tg-link-color)] transition-colors" />
+            <span className="flex-grow text-left">Copy</span>
+          </button>
+
+          {contextMenu.msg.sender === 'bot' && (
+            <button 
+              onClick={() => { handleRegenerate(contextMenu.msg); setContextMenu(null); }}
+              className="flex items-center gap-3 px-3 py-1.5 hover:bg-[var(--tg-secondary-bg-color)] text-[var(--tg-text-color)] transition-colors text-[14px] group"
+            >
+              <RotateCcw size={18} className="text-[var(--tg-hint-color)] group-hover:text-[var(--tg-link-color)] transition-colors" />
+              <span className="flex-grow text-left">Regenerate</span>
+            </button>
+          )}
+
+          <button className="flex items-center gap-3 px-3 py-1.5 hover:bg-[var(--tg-secondary-bg-color)] text-[var(--tg-text-color)] transition-colors text-[14px] group">
+            <Languages size={18} className="text-[var(--tg-hint-color)] group-hover:text-[var(--tg-link-color)] transition-colors" />
+            <span className="flex-grow text-left">Translate</span>
+          </button>
+
+          <button className="flex items-center gap-3 px-3 py-1.5 hover:bg-[var(--tg-secondary-bg-color)] text-[var(--tg-text-color)] transition-colors text-[14px] group">
+            <CheckCircle2 size={18} className="text-[var(--tg-hint-color)] group-hover:text-[var(--tg-link-color)] transition-colors" />
+            <span className="flex-grow text-left">Select</span>
+          </button>
+
+          <button 
+            onClick={() => { deleteMessageNode(activeChatId, contextMenu.msg.id); setContextMenu(null); }}
+            className="flex items-center gap-3 px-3 py-1.5 hover:bg-red-500/10 text-red-500 transition-colors text-[14px]"
+          >
+            <Trash2 size={18} />
+            <span className="flex-grow text-left">Delete</span>
+          </button>
+
+          {contextMenu.msg.stats && (
+            <div className="mt-0.5 px-3 py-1.5 bg-[var(--tg-secondary-bg-color)]">
+              <div className="flex flex-col gap-1 text-[10px] text-[var(--tg-hint-color)]">
+                {contextMenu.msg.sender === 'bot' && contextMenu.msg.stats.model && (
+                  <span className="font-semibold opacity-80 border-b border-white/5 pb-1 mb-0.5">{contextMenu.msg.stats.model}</span>
+                )}
+                <div className="flex items-center gap-2">
+                  {contextMenu.msg.sender === 'user' ? (
+                    <span>{contextMenu.msg.stats.promptTokens} tkn</span>
+                  ) : (
+                    <>
+                      <span>{contextMenu.msg.stats.completionTokens} tkn</span>
+                      {contextMenu.msg.stats.speed > 0 && (
+                        <>
+                          <span className="opacity-30">|</span>
+                          <span>{contextMenu.msg.stats.speed?.toFixed(1) + ' t/s'}</span>
+                        </>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };
