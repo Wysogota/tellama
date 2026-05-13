@@ -200,28 +200,36 @@ export const generateChatResponse = async (
         );
       }
 
+      const payload = {
+        ...(settings.modelName ? { model: settings.modelName } : {}),
+        messages: formattedMessages,
+        stream: true,
+        temperature: contact.temperature || 0.7,
+      };
+      
+      console.log(`[LLM Request] ${provider} v1/chat/completions:`, payload);
+
       response = await fetch(`${baseUrl}/v1/chat/completions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...(settings.modelName ? { model: settings.modelName } : {}),
-          messages: formattedMessages,
-          stream: true,
-          temperature: contact.temperature || 0.7,
-        }),
+        body: JSON.stringify(payload),
         signal,
       });
     } else {
       // OpenRouter / NVIDIA — proxy through local server (key never touches the browser)
+      const payload = {
+        provider,
+        messages: formattedMessages,
+        model: settings.modelName || '',
+        temperature: contact.temperature || 0.7,
+      };
+
+      console.log(`[LLM Request] Cloud Proxy (${provider}):`, payload);
+
       response = await fetch(`${SERVER_URL}/llm/proxy`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          provider,
-          messages: formattedMessages,
-          model: settings.modelName || '',
-          temperature: contact.temperature || 0.7,
-        }),
+        body: JSON.stringify(payload),
         signal,
       });
     }
