@@ -6,11 +6,19 @@ export const generateChatResponse = async (
   const startTime = performance.now();
 
   try {
-    // 0. Update proxy's active provider
+    // 0. Update proxy's active provider + inference parameters
     await fetch('http://localhost:3001/llm/active-provider', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider: settings.provider, model: settings.modelName })
+      body: JSON.stringify({
+        provider: settings.provider,
+        model: settings.modelName,
+        temperature: settings.temperature,
+        top_p: settings.top_p,
+        top_k: settings.top_k,
+        max_tokens: settings.max_tokens,
+        repeat_penalty: settings.repeat_penalty,
+      })
     });
 
     // 1. Ensure the Letta Agent exists for this persona

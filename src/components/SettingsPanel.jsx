@@ -4,7 +4,7 @@ import {
   Download, Save, Server, Globe, Cpu,
   Key, XCircle, Loader2, Check, ArrowLeft,
   Moon, Sun, ChevronDown, ChevronUp, Palette, Brain, Layout, ExternalLink, Star,
-  Search, X, Eye, EyeOff
+  Search, X, Eye, EyeOff, RotateCcw, Zap, Layers, Maximize2, Activity, Info
 } from 'lucide-react';
 
 const SERVER_URL = 'http://localhost:3001';
@@ -39,6 +39,48 @@ const MODEL_PLACEHOLDERS = {
   nvidia: 'e.g. meta/llama-3.1',
 };
 
+// Per-model recommended params based on model family (mirrors server getModelDefaults)
+// Used for llamacpp where models aren't fetched from an API
+const getModelFamilyDefaults = (modelId) => {
+  const s = (modelId || '').toLowerCase();
+  if (s.includes('gemma')) return { temperature: 1.0, top_p: 0.95, top_k: 64, max_tokens: 2048, repeat_penalty: 1.0 };
+  if (s.includes('llama')) return { temperature: 0.8, top_p: 0.9, top_k: 40, max_tokens: 2048, repeat_penalty: 1.1 };
+  if (s.includes('claude')) return { temperature: 1.0, top_p: 1.0, top_k: null, max_tokens: 4096, repeat_penalty: null };
+  if (s.includes('gpt-4') || s.includes('o1') || s.includes('o3') || s.includes('o4'))
+    return { temperature: 0.8, top_p: 1.0, top_k: null, max_tokens: 2048, repeat_penalty: null };
+  if (s.includes('gpt')) return { temperature: 0.9, top_p: 1.0, top_k: null, max_tokens: 1024, repeat_penalty: null };
+  if (s.includes('mixtral')) return { temperature: 0.7, top_p: 0.9, top_k: 40, max_tokens: 2048, repeat_penalty: 1.05 };
+  if (s.includes('mistral')) return { temperature: 0.7, top_p: 0.9, top_k: 40, max_tokens: 2048, repeat_penalty: 1.05 };
+  if (s.includes('qwen')) return { temperature: 0.7, top_p: 0.8, top_k: 20, max_tokens: 2048, repeat_penalty: 1.05 };
+  if (s.includes('deepseek')) return { temperature: 0.7, top_p: 0.9, top_k: 40, max_tokens: 2048, repeat_penalty: 1.05 };
+  if (s.includes('phi')) return { temperature: 0.8, top_p: 0.95, top_k: 50, max_tokens: 2048, repeat_penalty: 1.1 };
+  if (s.includes('command') || s.includes('cohere'))
+    return { temperature: 0.8, top_p: 0.95, top_k: 75, max_tokens: 2048, repeat_penalty: 1.05 };
+  if (s.includes('falcon')) return { temperature: 0.8, top_p: 0.9, top_k: 40, max_tokens: 1024, repeat_penalty: 1.1 };
+  if (s.includes('yi') || s.includes('01-ai')) return { temperature: 0.7, top_p: 0.9, top_k: 40, max_tokens: 2048, repeat_penalty: 1.05 };
+  if (s.includes('solar')) return { temperature: 0.7, top_p: 0.9, top_k: 40, max_tokens: 2048, repeat_penalty: 1.05 };
+  if (s.includes('wizard')) return { temperature: 0.7, top_p: 0.9, top_k: 40, max_tokens: 1024, repeat_penalty: 1.1 };
+  if (s.includes('zephyr')) return { temperature: 0.7, top_p: 0.9, top_k: 40, max_tokens: 1024, repeat_penalty: 1.1 };
+  if (s.includes('vicuna') || s.includes('alpaca'))
+    return { temperature: 0.9, top_p: 0.9, top_k: 40, max_tokens: 1024, repeat_penalty: 1.1 };
+  if (s.includes('nemotron')) return { temperature: 0.6, top_p: 0.9, top_k: 40, max_tokens: 2048, repeat_penalty: 1.0 };
+  if (s.includes('granite')) return { temperature: 0.7, top_p: 0.9, top_k: 40, max_tokens: 2048, repeat_penalty: 1.05 };
+  // Default fallback
+  return { temperature: 0.7, top_p: 0.9, top_k: 40, max_tokens: 1024, repeat_penalty: 1.1 };
+};
+
+// Param definitions for the UI with Icons
+const LLM_PARAMS = [
+  { key: 'temperature', label: 'Temperature', icon: Zap, min: 0, max: 2, step: 0.05, decimals: 2, providers: ['llamacpp', 'openrouter', 'nvidia'], tip: 'Creativity / randomness. Lower = more focused, higher = more varied.' },
+  { key: 'top_p', label: 'Top-P', icon: Layers, min: 0, max: 1, step: 0.01, decimals: 2, providers: ['llamacpp', 'openrouter', 'nvidia'], tip: 'Nucleus sampling: limits token pool to top-p probability mass.' },
+  { key: 'top_k', label: 'Top-K', icon: Activity, min: 1, max: 200, step: 1, decimals: 0, providers: ['llamacpp'], tip: 'Limits token choices to K most probable tokens (local models only).' },
+  { key: 'max_tokens', label: 'Max Tokens', icon: Maximize2, min: 64, max: 8192, step: 64, decimals: 0, providers: ['llamacpp', 'openrouter', 'nvidia'], tip: 'Maximum number of tokens the model can generate per reply.' },
+  { key: 'repeat_penalty', label: 'Repeat Penalty', icon: Layers, min: 1, max: 2, step: 0.05, decimals: 2, providers: ['llamacpp'], tip: 'Penalises repeating tokens. Higher = less repetition (local models only).' },
+];
+
+
+
+
 const getModelBrandIcon = (modelId) => {
   const id = modelId.toLowerCase();
   const getUrl = (domain) => `${SERVER_URL}/llm/icon?domain=${domain}`;
@@ -58,6 +100,9 @@ const getModelBrandIcon = (modelId) => {
 const SettingsPanel = ({ onBack }) => {
   const { settings, updateSettings, personas, messages } = useAppContext();
   const [localSettings, setLocalSettings] = useState({ ...settings });
+  const [tooltipParam, setTooltipParam] = useState(null);
+  // Stores the defaultParams of the currently selected model for "Reset to defaults"
+  const [currentModelDefaults, setCurrentModelDefaults] = useState(null);
 
   const [keyInputs, setKeyInputs] = useState({ openrouter: '', nvidia: '' });
   const [keyStatus, setKeyStatus] = useState({ openrouter: false, nvidia: false });
@@ -65,12 +110,12 @@ const SettingsPanel = ({ onBack }) => {
   const [saveStatus, setSaveStatus] = useState({}); // provider -> status
   const [showKey, setShowKey] = useState({ openrouter: false, nvidia: false });
   const [expandedSection, setExpandedSection] = useState('appearance');
-  
+
   const [modelsList, setModelsList] = useState([]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
   const [modelSearchQuery, setModelSearchQuery] = useState('');
-  
+
   const modelDropdownRef = useRef(null);
 
   useEffect(() => {
@@ -82,7 +127,7 @@ const SettingsPanel = ({ onBack }) => {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
-  
+
   useEffect(() => {
     setLocalSettings(prev => ({ ...prev, theme: settings.theme }));
   }, [settings.theme]);
@@ -99,7 +144,7 @@ const SettingsPanel = ({ onBack }) => {
 
   useEffect(() => {
     const provider = localSettings.provider || 'llamacpp';
-    
+
     // Restore the model for this provider if it exists
     const providerModel = localSettings[`model_${provider}`];
     if (providerModel !== undefined && providerModel !== localSettings.modelName) {
@@ -111,8 +156,14 @@ const SettingsPanel = ({ onBack }) => {
       fetch(`${SERVER_URL}/llm/models/${provider}`)
         .then(res => res.json())
         .then(data => {
-          setModelsList(Array.isArray(data) ? data : []);
+          const list = Array.isArray(data) ? data : [];
+          setModelsList(list);
           setModelsLoading(false);
+          // If we already have a selected model, restore its defaultParams
+          const currentModel = list.find(m => m.id === (localSettings[`model_${provider}`] || localSettings.modelName));
+          if (currentModel?.defaultParams) {
+            setCurrentModelDefaults(currentModel.defaultParams);
+          }
         })
         .catch(err => {
           console.error('Failed to fetch models', err);
@@ -121,6 +172,10 @@ const SettingsPanel = ({ onBack }) => {
         });
     } else {
       setModelsList([]);
+      // For llamacpp, derive defaults from model name family
+      if (providerModel) {
+        setCurrentModelDefaults(getModelFamilyDefaults(providerModel));
+      }
     }
   }, [localSettings.provider]);
 
@@ -128,8 +183,9 @@ const SettingsPanel = ({ onBack }) => {
   useEffect(() => {
     const timer = setTimeout(() => {
       const changed = {};
-      const keysToSync = ['modelName', 'host', 'bgIntensity', 'accentColor', 'provider', 'freeModelsOnly', 'model_llamacpp', 'model_openrouter', 'model_nvidia'];
-      
+      const keysToSync = ['modelName', 'host', 'bgIntensity', 'accentColor', 'provider', 'freeModelsOnly', 'model_llamacpp', 'model_openrouter', 'model_nvidia',
+        'temperature', 'top_p', 'top_k', 'max_tokens', 'repeat_penalty'];
+
       keysToSync.forEach(key => {
         if (localSettings[key] !== settings[key]) {
           changed[key] = localSettings[key];
@@ -156,9 +212,9 @@ const SettingsPanel = ({ onBack }) => {
           body: JSON.stringify({ modelId }),
         });
       }
-      
+
       // Update local state
-      setModelsList(prev => prev.map(m => 
+      setModelsList(prev => prev.map(m =>
         m.id === modelId ? { ...m, isFavorite: !isFavorite } : m
       ).sort((a, b) => {
         if (a.isFavorite && !b.isFavorite) return -1;
@@ -195,7 +251,7 @@ const SettingsPanel = ({ onBack }) => {
   };
 
   const handleClearKey = async (provider) => {
-    await fetch(`${SERVER_URL}/llm/keys/${provider}`, { method: 'DELETE' }).catch(() => {});
+    await fetch(`${SERVER_URL}/llm/keys/${provider}`, { method: 'DELETE' }).catch(() => { });
     setKeyStatus(prev => ({ ...prev, [provider]: false }));
     setKeyInputs(prev => ({ ...prev, [provider]: '' }));
   };
@@ -220,7 +276,7 @@ const SettingsPanel = ({ onBack }) => {
     <div className="flex flex-col h-full bg-[var(--tg-bg-color)]">
       {/* Header */}
       <div className="flex items-center px-4 h-[60px] bg-[var(--tg-bg-color)] flex-shrink-0">
-        <button 
+        <button
           onClick={onBack}
           className="p-2 mr-4 text-[var(--tg-hint-color)] hover:bg-[var(--tg-sidebar-hover)] rounded-full transition-colors"
         >
@@ -232,7 +288,7 @@ const SettingsPanel = ({ onBack }) => {
       <div className="flex-grow overflow-y-auto custom-scrollbar">
         {/* Appearance Section */}
         <div className="mt-1">
-          <button 
+          <button
             onClick={() => setExpandedSection(expandedSection === 'appearance' ? null : 'appearance')}
             className="mx-2 w-[calc(100%-16px)] flex items-center gap-3 px-3 py-2.5 hover:bg-[var(--tg-sidebar-hover)] transition-all text-left rounded-xl group"
           >
@@ -249,7 +305,7 @@ const SettingsPanel = ({ onBack }) => {
           {expandedSection === 'appearance' && (
             <div className="px-5 pb-6 pt-2 space-y-6 animate-in slide-in-from-top-2 duration-200">
               {/* Night Mode Button */}
-              <button 
+              <button
                 onClick={() => {
                   const newTheme = localSettings.theme === 'dark' ? 'light' : 'dark';
                   updateSettings({ theme: newTheme });
@@ -267,22 +323,21 @@ const SettingsPanel = ({ onBack }) => {
                     </span>
                   </div>
                 </div>
-                <div className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors ${
-                  localSettings.theme === 'dark' 
-                    ? 'bg-[var(--tg-link-color)] text-white' 
+                <div className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors ${localSettings.theme === 'dark'
+                    ? 'bg-[var(--tg-link-color)] text-white'
                     : 'bg-[var(--tg-sidebar-hover)] text-[var(--tg-hint-color)]'
-                }`}>
+                  }`}>
                   {localSettings.theme === 'dark' ? 'Enabled' : 'Disabled'}
                 </div>
               </button>
 
               <div className="flex flex-wrap gap-3">
                 {[
-                  { id: 'blue',   color: '#5288c1' },
-                  { id: 'green',  color: '#5fb389' },
+                  { id: 'blue', color: '#5288c1' },
+                  { id: 'green', color: '#5fb389' },
                   { id: 'orange', color: '#d48b52' },
-                  { id: 'red',    color: '#c46b6b' },
-                  { id: 'pink',   color: '#c8759d' },
+                  { id: 'red', color: '#c46b6b' },
+                  { id: 'pink', color: '#c8759d' },
                   { id: 'indigo', color: '#7d70b3' },
                 ].map((c) => (
                   <button
@@ -320,7 +375,7 @@ const SettingsPanel = ({ onBack }) => {
 
         {/* LLM Provider Section */}
         <div className="mt-1">
-          <button 
+          <button
             onClick={() => setExpandedSection(expandedSection === 'provider' ? null : 'provider')}
             className="mx-2 w-[calc(100%-16px)] flex items-center gap-3 px-3 py-2.5 hover:bg-[var(--tg-sidebar-hover)] transition-all text-left rounded-xl group"
           >
@@ -375,13 +430,12 @@ const SettingsPanel = ({ onBack }) => {
                       {currentProvider === 'openrouter' && (
                         <button
                           onClick={() => setLocalSettings(prev => ({ ...prev, freeModelsOnly: !prev.freeModelsOnly }))}
-                          className={`text-[10px] px-2 py-0.5 rounded-full transition-colors border ${
-                            localSettings.freeModelsOnly 
-                              ? 'bg-[var(--tg-link-color)] text-white border-[var(--tg-link-color)]' 
+                          className={`text-[10px] px-2 py-0.5 rounded-full transition-colors border ${localSettings.freeModelsOnly
+                              ? 'bg-[var(--tg-link-color)] text-white border-[var(--tg-link-color)]'
                               : 'bg-transparent text-[var(--tg-hint-color)] border-[var(--tg-border-color)] hover:border-[var(--tg-link-color)]/40'
-                          }`}
+                            }`}
                         >
-                          Free Models Only
+                          Free Models
                         </button>
                       )}
                     </div>
@@ -415,8 +469,8 @@ const SettingsPanel = ({ onBack }) => {
                             <div className="mx-1 w-[calc(100%-8px)] px-2 py-3 border-b border-[var(--tg-border-color)] sticky top-0 bg-[var(--tg-search-bg)] z-[70]">
                               <div className="relative">
                                 <Search size={20} className="absolute left-[6px] top-1/2 -translate-y-1/2 text-[var(--tg-hint-color)]" />
-                                <input 
-                                  type="text" 
+                                <input
+                                  type="text"
                                   value={modelSearchQuery}
                                   onChange={(e) => setModelSearchQuery(e.target.value)}
                                   placeholder="Search models..."
@@ -425,7 +479,7 @@ const SettingsPanel = ({ onBack }) => {
                                   onClick={(e) => e.stopPropagation()}
                                 />
                                 {modelSearchQuery && (
-                                  <button 
+                                  <button
                                     onClick={(e) => { e.stopPropagation(); setModelSearchQuery(''); }}
                                     className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-[var(--tg-hint-color)] hover:text-[var(--tg-text-color)]"
                                   >
@@ -438,70 +492,77 @@ const SettingsPanel = ({ onBack }) => {
                               {modelsList
                                 .filter(m => (!localSettings.freeModelsOnly || m.isFree) && (m.name.toLowerCase().includes(modelSearchQuery.toLowerCase()) || m.id.toLowerCase().includes(modelSearchQuery.toLowerCase())))
                                 .map(m => (
-                                <div
-                                  key={m.id}
-                                  onClick={() => {
-                                    const provider = localSettings.provider || 'llamacpp';
-                                    setLocalSettings({ 
-                                      ...localSettings, 
-                                      modelName: m.id,
-                                      [`model_${provider}`]: m.id
-                                    });
-                                    setIsModelDropdownOpen(false);
-                                  }}
-                                  className={`w-[calc(100%-8px)] mx-1 flex items-center gap-3 px-2 py-2 hover:bg-[var(--tg-border-color)] transition-colors rounded-xl text-left cursor-pointer group ${localSettings.modelName === m.id ? 'bg-[var(--tg-border-color)]' : ''}`}
-                                >
-                                  <div className="w-8 h-8 rounded-full bg-[var(--tg-secondary-bg-color)] flex items-center justify-center text-[var(--tg-link-color)] flex-shrink-0 overflow-hidden">
-                                    {getModelBrandIcon(m.id) ? (
-                                      <img src={getModelBrandIcon(m.id)} className="w-full h-full rounded-full object-contain" alt="" />
-                                    ) : (
-                                      <Brain size={18} />
-                                    )}
-                                  </div>
-                                  <div className="flex-grow min-w-0">
-                                    <div className="flex items-center justify-between gap-2">
-                                      <span className={`text-[15px] font-semibold truncate ${localSettings.modelName === m.id ? 'text-[var(--tg-link-color)]' : 'text-[var(--tg-text-color)]'}`}>
-                                        {m.name}
-                                      </span>
-                                      <div className="flex items-center gap-0.5 flex-shrink-0">
-                                        {m.isFree && (
-                                          <div className="flex items-center gap-1 bg-green-500/10 text-green-500 px-1.5 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider border border-green-500/20 mr-1">
-                                            Free
-                                          </div>
-                                        )}
-                                        <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                          <a 
-                                            href={m.link} 
-                                            target="_blank" 
-                                            rel="noreferrer"
-                                            onClick={(e) => e.stopPropagation()}
-                                            className="p-1.5 rounded-lg text-[var(--tg-hint-color)] hover:bg-[var(--tg-link-color)]/10 hover:text-[var(--tg-link-color)] transition-colors"
-                                            title="View Model Info"
-                                          >
-                                            <ExternalLink size={14} />
-                                          </a>
-                                        </div>
-                                        <button
-                                          onClick={(e) => toggleFavorite(e, m.id, m.isFavorite)}
-                                          className={`p-1.5 rounded-lg transition-colors ${m.isFavorite ? 'text-yellow-500 hover:bg-yellow-500/10' : 'text-[var(--tg-hint-color)] hover:bg-[var(--tg-hint-color)]/10'}`}
-                                          title={m.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
-                                        >
-                                          <Star size={14} fill={m.isFavorite ? "currentColor" : "none"} />
-                                        </button>
-                                      </div>
+                                  <div
+                                    key={m.id}
+                                    onClick={() => {
+                                      const provider = localSettings.provider || 'llamacpp';
+                                      const dp = m.defaultParams || {};
+                                      // Save model defaults so Reset button knows what to restore
+                                      setCurrentModelDefaults(m.defaultParams || null);
+                                      setLocalSettings(prev => ({
+                                        ...prev,
+                                        modelName: m.id,
+                                        [`model_${provider}`]: m.id,
+                                        // Auto-apply model's recommended params
+                                        ...(dp.temperature !== undefined ? { temperature: dp.temperature } : {}),
+                                        ...(dp.top_p !== undefined ? { top_p: dp.top_p } : {}),
+                                        ...(dp.max_tokens !== undefined ? { max_tokens: dp.max_tokens } : {}),
+                                      }));
+                                      setIsModelDropdownOpen(false);
+                                    }}
+                                    className={`w-[calc(100%-8px)] mx-1 flex items-center gap-3 px-2 py-2 hover:bg-[var(--tg-border-color)] transition-colors rounded-xl text-left cursor-pointer group ${localSettings.modelName === m.id ? 'bg-[var(--tg-border-color)]' : ''}`}
+                                  >
+                                    <div className="w-8 h-8 rounded-full bg-[var(--tg-secondary-bg-color)] flex items-center justify-center text-[var(--tg-link-color)] flex-shrink-0 overflow-hidden">
+                                      {getModelBrandIcon(m.id) ? (
+                                        <img src={getModelBrandIcon(m.id)} className="w-full h-full rounded-full object-contain" alt="" />
+                                      ) : (
+                                        <Brain size={18} />
+                                      )}
                                     </div>
-                                    <p className="text-[12px] text-[var(--tg-hint-color)] truncate opacity-70">
-                                      {m.id}
-                                    </p>
+                                    <div className="flex-grow min-w-0">
+                                      <div className="flex items-center justify-between gap-2">
+                                        <span className={`text-[15px] font-semibold truncate ${localSettings.modelName === m.id ? 'text-[var(--tg-link-color)]' : 'text-[var(--tg-text-color)]'}`}>
+                                          {m.name}
+                                        </span>
+                                        <div className="flex items-center gap-0.5 flex-shrink-0">
+                                          {m.isFree && (
+                                            <div className="flex items-center gap-1 bg-green-500/10 text-green-500 px-1.5 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider border border-green-500/20 mr-1">
+                                              Free
+                                            </div>
+                                          )}
+                                          <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <a
+                                              href={m.link}
+                                              target="_blank"
+                                              rel="noreferrer"
+                                              onClick={(e) => e.stopPropagation()}
+                                              className="p-1.5 rounded-lg text-[var(--tg-hint-color)] hover:bg-[var(--tg-link-color)]/10 hover:text-[var(--tg-link-color)] transition-colors"
+                                              title="View Model Info"
+                                            >
+                                              <ExternalLink size={14} />
+                                            </a>
+                                          </div>
+                                          <button
+                                            onClick={(e) => toggleFavorite(e, m.id, m.isFavorite)}
+                                            className={`p-1.5 rounded-lg transition-colors ${m.isFavorite ? 'text-yellow-500 hover:bg-yellow-500/10' : 'text-[var(--tg-hint-color)] hover:bg-[var(--tg-hint-color)]/10'}`}
+                                            title={m.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+                                          >
+                                            <Star size={14} fill={m.isFavorite ? "currentColor" : "none"} />
+                                          </button>
+                                        </div>
+                                      </div>
+                                      <p className="text-[12px] text-[var(--tg-hint-color)] truncate opacity-70">
+                                        {m.id}
+                                      </p>
+                                    </div>
                                   </div>
+                                ))
+                              }
+                              {modelsList.filter(m => (!localSettings.freeModelsOnly || m.isFree) && (m.name.toLowerCase().includes(modelSearchQuery.toLowerCase()) || m.id.toLowerCase().includes(modelSearchQuery.toLowerCase()))).length === 0 && !modelsLoading && (
+                                <div className="px-4 py-8 text-center text-[var(--tg-hint-color)] text-sm italic">
+                                  No models found
                                 </div>
-                              ))
-                            }
-                            {modelsList.filter(m => (!localSettings.freeModelsOnly || m.isFree) && (m.name.toLowerCase().includes(modelSearchQuery.toLowerCase()) || m.id.toLowerCase().includes(modelSearchQuery.toLowerCase()))).length === 0 && !modelsLoading && (
-                              <div className="px-4 py-8 text-center text-[var(--tg-hint-color)] text-sm italic">
-                                No models found
-                              </div>
-                            )}
+                              )}
                             </div>
                           </div>
                         )}
@@ -517,17 +578,26 @@ const SettingsPanel = ({ onBack }) => {
                       onChange={(e) => {
                         const val = e.target.value;
                         const provider = localSettings.provider || 'llamacpp';
-                        setLocalSettings({ 
-                          ...localSettings, 
+                        const familyDefaults = getModelFamilyDefaults(val);
+                        setCurrentModelDefaults(familyDefaults);
+                        setLocalSettings(prev => ({
+                          ...prev,
                           modelName: val,
-                          [`model_${provider}`]: val 
-                        });
+                          [`model_${provider}`]: val,
+                          // Auto-apply family defaults as the user types the model name
+                          temperature: familyDefaults.temperature,
+                          top_p: familyDefaults.top_p,
+                          top_k: familyDefaults.top_k ?? prev.top_k,
+                          max_tokens: familyDefaults.max_tokens,
+                          repeat_penalty: familyDefaults.repeat_penalty ?? prev.repeat_penalty,
+                        }));
                       }}
                       placeholder={MODEL_PLACEHOLDERS[currentProvider]}
                       className="w-full bg-[var(--tg-secondary-bg-color)] text-[var(--tg-text-color)] border border-[var(--tg-border-color)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--tg-link-color)] transition-colors"
                     />
                   </div>
                 )}
+
 
                 {currentProvider === 'llamacpp' && (
                   <div>
@@ -556,15 +626,15 @@ const SettingsPanel = ({ onBack }) => {
                         {saveStatus[currentProvider] === 'error' && <span className="text-red-500 text-[10px]">Failed to save</span>}
                       </div>
                       {keyStatus[currentProvider] && (
-                        <button 
-                          onClick={() => handleClearKey(currentProvider)} 
+                        <button
+                          onClick={() => handleClearKey(currentProvider)}
                           className="text-red-400 hover:text-red-500 text-[10px] hover:underline transition-all"
                         >
                           Reset Key
                         </button>
                       )}
                     </div>
-                    
+
                     <div className="relative group">
                       <div className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--tg-hint-color)] group-focus-within:text-[var(--tg-link-color)] transition-colors pointer-events-none">
                         <Key size={14} />
@@ -604,17 +674,138 @@ const SettingsPanel = ({ onBack }) => {
                     </div>
                     {!keyStatus[currentProvider] && !keyInputs[currentProvider] && (
                       <p className="text-[10px] text-[var(--tg-hint-color)] mt-1 opacity-60">
-                        {currentProvider === 'openrouter' 
-                          ? 'Your key is stored locally and never leaves your browser/server.' 
+                        {currentProvider === 'openrouter'
+                          ? 'Your key is stored locally and never leaves your browser/server.'
                           : 'Get your API key from the NVIDIA NIM dashboard.'}
                       </p>
                     )}
                   </div>
                 )}
+
+                {/* ── Neural Network Settings ───────────────────────────────── */}
+                <div className="mt-5 space-y-2.5">
+
+                  <div className="flex items-center justify-between px-1">
+                    <div>
+                      <h3 className="text-[11px] font-bold text-[var(--tg-hint-color)] uppercase tracking-widest flex items-center gap-2">
+                        <div className="w-1 h-3 bg-[var(--tg-link-color)] rounded-full" />
+                        Generation Parameters
+                      </h3>
+                      {currentModelDefaults && localSettings.modelName && (
+                        <div className="text-[10px] text-[var(--tg-link-color)] opacity-60 mt-1 flex items-center gap-1.5 font-medium italic">
+                          <Check size={10} strokeWidth={3} />
+                          Optimized for {localSettings.modelName.split('/').pop()}
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => {
+                        const d = currentModelDefaults || getModelFamilyDefaults(localSettings.modelName);
+                        setLocalSettings(prev => ({
+                          ...prev,
+                          temperature: d.temperature ?? prev.temperature,
+                          top_p: d.top_p ?? prev.top_p,
+                          top_k: d.top_k ?? prev.top_k,
+                          max_tokens: d.max_tokens ?? prev.max_tokens,
+                          repeat_penalty: d.repeat_penalty ?? prev.repeat_penalty,
+                        }));
+                      }}
+                      className="p-2 rounded-xl bg-[var(--tg-secondary-bg-color)] border border-[var(--tg-border-color)] text-[var(--tg-hint-color)] hover:text-[var(--tg-link-color)] hover:border-[var(--tg-link-color)]/30 transition-all group active:scale-95"
+                      title="Reset to recommended defaults"
+                    >
+                      <RotateCcw size={14} className="group-hover:rotate-[-90deg] transition-transform duration-300" />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-1.5 px-1">
+
+                    {LLM_PARAMS.filter(p => p.providers.includes(currentProvider)).map(param => (
+                      <div
+                        key={param.key}
+                        className="group/item relative bg-[var(--tg-secondary-bg-color)]/30 hover:bg-[var(--tg-secondary-bg-color)]/60 rounded-xl p-2 transition-all duration-300"
+                      >
+                        <div className="flex items-center justify-between mb-1.5">
+
+
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-7 h-7 rounded-lg bg-[var(--tg-bg-color)] flex items-center justify-center text-[var(--tg-link-color)] shadow-sm border border-[var(--tg-border-color)] group-hover/item:border-[var(--tg-link-color)]/20 transition-colors">
+                              <param.icon size={14} />
+                            </div>
+                            <div className="flex flex-col">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[12px] font-semibold text-[var(--tg-text-color)]">{param.label}</span>
+                                <div className="relative">
+                                  <button
+                                    onMouseEnter={() => setTooltipParam(param.key)}
+                                    onMouseLeave={() => setTooltipParam(null)}
+                                    className="w-3.5 h-3.5 rounded-full text-[var(--tg-hint-color)] hover:text-[var(--tg-link-color)] transition-colors"
+                                  >
+                                    <Info size={12} />
+                                  </button>
+                                  {tooltipParam === param.key && (
+                                    <div className="absolute left-0 top-full mt-2 z-[150] w-52 bg-[var(--tg-bg-color)]/95 backdrop-blur-md border border-[var(--tg-border-color)] rounded-xl px-3 py-2.5 text-[11px] text-[var(--tg-text-color)] shadow-[0_8px_30px_rgb(0,0,0,0.12)] animate-in fade-in slide-in-from-top-1 duration-200 pointer-events-none">
+                                      <div className="font-bold text-[var(--tg-link-color)] mb-1 uppercase tracking-tighter text-[9px] opacity-70">{param.label}</div>
+                                      {param.tip}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+
+                          <div className="flex items-center bg-[var(--tg-bg-color)] border border-[var(--tg-border-color)] rounded-lg px-2 py-0.5 group-focus-within/item:border-[var(--tg-link-color)] transition-colors">
+                            <input
+                              type="number"
+                              min={param.min}
+                              max={param.max}
+                              step={param.step}
+                              value={localSettings[param.key] ?? ''}
+                              onChange={e => {
+                                const raw = parseFloat(e.target.value);
+                                if (!isNaN(raw)) {
+                                  const clamped = Math.min(param.max, Math.max(param.min, param.decimals === 0 ? Math.round(raw) : raw));
+                                  setLocalSettings(prev => ({ ...prev, [param.key]: clamped }));
+                                }
+                              }}
+                              className="w-12 bg-transparent text-[var(--tg-text-color)] text-[13px] font-bold text-right outline-none tabular-nums"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="relative flex items-center">
+                          <input
+                            type="range"
+                            min={param.min}
+                            max={param.max}
+                            step={param.step}
+                            value={localSettings[param.key] ?? param.min}
+                            onChange={e => {
+                              const val = param.decimals === 0 ? parseInt(e.target.value) : parseFloat(parseFloat(e.target.value).toFixed(param.decimals));
+                              setLocalSettings(prev => ({ ...prev, [param.key]: val }));
+                            }}
+                            className="w-full h-1.5 bg-[var(--tg-secondary-bg-color)] rounded-full appearance-none cursor-pointer accent-[var(--tg-link-color)]"
+                            style={{
+                              background: `linear-gradient(to right, var(--tg-link-color) 0%, var(--tg-link-color) ${((localSettings[param.key] || param.min) - param.min) / (param.max - param.min) * 100}%, var(--tg-border-color) ${((localSettings[param.key] || param.min) - param.min) / (param.max - param.min) * 100}%, var(--tg-border-color) 100%)`
+                            }}
+                          />
+                        </div>
+
+                        <div className="flex justify-between mt-1 text-[9px] font-medium text-[var(--tg-hint-color)] opacity-50 uppercase tracking-tighter">
+
+                          <span>{param.min}</span>
+                          <span>{param.max}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
               </div>
             </div>
           )}
         </div>
+
 
 
       </div>

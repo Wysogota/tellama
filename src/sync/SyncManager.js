@@ -167,7 +167,6 @@ export async function syncPull(serverUrl) {
                 gender: personalInfo.gender || '',
                 traits: personalInfo.traits || [],
                 style: personalInfo.style || [],
-                temperature: personalInfo.temperature ?? 0.7,
                 initiativeFrequency: personalInfo.initiativeFrequency || 'never',
                 avatar: personalInfo.avatar || null,
                 createdAt: data.created_at,

@@ -18,7 +18,6 @@ const PersonaModal = ({ onClose, editingPersonaId = null, isModal = false }) => 
       gender: '',
       traits: [],
       style: [],
-      temperature: 0.7,
       initiativeFrequency: 'never',
       avatar: null
     }
@@ -42,7 +41,6 @@ const PersonaModal = ({ onClose, editingPersonaId = null, isModal = false }) => 
         gender: '',
         traits: [],
         style: [],
-        temperature: 0.7,
         initiativeFrequency: 'never',
         avatar: null
       });
@@ -162,25 +160,6 @@ const PersonaModal = ({ onClose, editingPersonaId = null, isModal = false }) => 
             onTagsChange={(newTags) => setFormData({...formData, style: newTags})}
             placeholder="Add style (e.g. Formal, Slang)"
           />
-          
-          <div>
-            <div className="flex justify-between items-center mb-1">
-               <label className="block text-sm font-medium text-[var(--tg-hint-color)]">Temperature (Creativity)</label>
-               <span className="text-sm font-medium">{formData.temperature}</span>
-            </div>
-            <input 
-              type="range" 
-              min="0" max="2" step="0.1"
-              value={formData.temperature}
-              onChange={(e) => setFormData({...formData, temperature: parseFloat(e.target.value)})}
-              className="w-full accent-[var(--tg-link-color)]"
-            />
-            <div className="flex justify-between text-xs text-[var(--tg-hint-color)] mt-1">
-              <span>Precise</span>
-              <span>Creative</span>
-            </div>
-          </div>
-
           <div>
             <label className="block text-sm font-medium text-[var(--tg-hint-color)] mb-1">Spontaneous Messages Frequency</label>
             <select 

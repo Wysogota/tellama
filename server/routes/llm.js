@@ -29,12 +29,24 @@ const PROVIDER_CONFIGS = {
 // ── Active Settings State (In-Memory) ───────────────────────────────────────
 let ACTIVE_PROVIDER = 'openrouter';
 let ACTIVE_MODEL = '';
+let ACTIVE_PARAMS = {
+  temperature: 0.7,
+  top_p: 0.9,
+  top_k: 40,
+  max_tokens: 1024,
+  repeat_penalty: 1.1,
+};
 
 // POST /llm/active-provider
 router.post('/active-provider', (req, res) => {
-  const { provider, model } = req.body;
+  const { provider, model, temperature, top_p, top_k, max_tokens, repeat_penalty } = req.body;
   if (provider) ACTIVE_PROVIDER = provider;
   if (model) ACTIVE_MODEL = model;
+  if (temperature !== undefined) ACTIVE_PARAMS.temperature = temperature;
+  if (top_p !== undefined) ACTIVE_PARAMS.top_p = top_p;
+  if (top_k !== undefined) ACTIVE_PARAMS.top_k = top_k;
+  if (max_tokens !== undefined) ACTIVE_PARAMS.max_tokens = max_tokens;
+  if (repeat_penalty !== undefined) ACTIVE_PARAMS.repeat_penalty = repeat_penalty;
   res.json({ ok: true });
 });
 
@@ -151,7 +163,14 @@ router.post('/proxy/:provider/chat/completions', async (req, res) => {
         model: realModel || undefined,
         messages,
         stream: req.body.stream ?? false,
-        temperature: temperature ?? 0.7,
+        temperature: req.body.temperature ?? ACTIVE_PARAMS.temperature,
+        top_p: req.body.top_p ?? ACTIVE_PARAMS.top_p,
+        max_tokens: req.body.max_tokens ?? ACTIVE_PARAMS.max_tokens,
+        // llamacpp-specific params (ignored by cloud providers)
+        ...(baseProvider === 'llamacpp' ? {
+          top_k: req.body.top_k ?? ACTIVE_PARAMS.top_k,
+          repeat_penalty: req.body.repeat_penalty ?? ACTIVE_PARAMS.repeat_penalty,
+        } : {}),
       }),
       signal: abortController.signal,
     });
@@ -232,6 +251,44 @@ const formatModelName = (id) => {
     .join(' ');
 };
 
+/**
+ * Returns recommended inference parameters for a model based on its family.
+ * contextLength comes from the provider API (e.g. OpenRouter's context_length field).
+ */
+const getModelDefaults = (id, contextLength) => {
+  const s = id.toLowerCase();
+  const ctx = contextLength || 4096;
+  // Sensible max_tokens: no more than 4096, but also no more than 1/4 of context window
+  const maxTok = (cap) => Math.min(cap, Math.max(256, Math.floor(ctx / 4)));
+
+  // ── Model-family detection ─────────────────────────────────────────────────
+  if (s.includes('gemma'))                      return { temperature: 1.0,  top_p: 0.95, max_tokens: maxTok(8192) };
+  if (s.includes('llama'))                      return { temperature: 0.8,  top_p: 0.9,  max_tokens: maxTok(4096) };
+  if (s.includes('claude'))                     return { temperature: 1.0,  top_p: 1.0,  max_tokens: maxTok(8192) };
+  if (s.includes('gpt-4') || s.includes('o1') || s.includes('o3') || s.includes('o4'))
+                                                return { temperature: 0.8,  top_p: 1.0,  max_tokens: maxTok(4096) };
+  if (s.includes('gpt'))                        return { temperature: 0.9,  top_p: 1.0,  max_tokens: maxTok(2048) };
+  if (s.includes('mixtral'))                    return { temperature: 0.7,  top_p: 0.9,  max_tokens: maxTok(4096) };
+  if (s.includes('mistral'))                    return { temperature: 0.7,  top_p: 0.9,  max_tokens: maxTok(4096) };
+  if (s.includes('qwen'))                       return { temperature: 0.7,  top_p: 0.8,  max_tokens: maxTok(4096) };
+  if (s.includes('deepseek'))                   return { temperature: 0.7,  top_p: 0.9,  max_tokens: maxTok(4096) };
+  if (s.includes('phi'))                        return { temperature: 0.8,  top_p: 0.95, max_tokens: maxTok(4096) };
+  if (s.includes('command') || s.includes('cohere'))
+                                                return { temperature: 0.8,  top_p: 0.95, max_tokens: maxTok(4096) };
+  if (s.includes('falcon'))                     return { temperature: 0.8,  top_p: 0.9,  max_tokens: maxTok(2048) };
+  if (s.includes('yi') || s.includes('01-ai')) return { temperature: 0.7,  top_p: 0.9,  max_tokens: maxTok(4096) };
+  if (s.includes('solar'))                      return { temperature: 0.7,  top_p: 0.9,  max_tokens: maxTok(4096) };
+  if (s.includes('wizard'))                     return { temperature: 0.7,  top_p: 0.9,  max_tokens: maxTok(2048) };
+  if (s.includes('zephyr'))                     return { temperature: 0.7,  top_p: 0.9,  max_tokens: maxTok(2048) };
+  if (s.includes('vicuna') || s.includes('alpaca'))
+                                                return { temperature: 0.9,  top_p: 0.9,  max_tokens: maxTok(2048) };
+  if (s.includes('nemotron'))                   return { temperature: 0.6,  top_p: 0.9,  max_tokens: maxTok(4096) };
+  if (s.includes('granite'))                    return { temperature: 0.7,  top_p: 0.9,  max_tokens: maxTok(4096) };
+
+  // Default fallback
+  return { temperature: 0.8, top_p: 0.9, max_tokens: maxTok(2048) };
+};
+
 // Fetch models from providers for the UI
 router.get('/models/:provider', async (req, res) => {
   const provider = req.params.provider;
@@ -259,7 +316,9 @@ router.get('/models/:provider', async (req, res) => {
           name: m.name || formatModelName(m.id),
           isFree: isFree,
           isFavorite: isFav(m.id),
-          link: `https://openrouter.ai/${m.id}`
+          link: `https://openrouter.ai/${m.id}`,
+          context_length: m.context_length || null,
+          defaultParams: getModelDefaults(m.id, m.context_length),
         };
       });
 
@@ -287,7 +346,9 @@ router.get('/models/:provider', async (req, res) => {
           name: formatModelName(m.id),
           isFree: false,
           isFavorite: isFav(m.id),
-          link: `https://build.nvidia.com/${m.id}/modelcard`
+          link: `https://build.nvidia.com/${m.id}/modelcard`,
+          context_length: m.context_length || null,
+          defaultParams: getModelDefaults(m.id, m.context_length),
         }));
 
       mapped.sort((a, b) => {

@@ -23,7 +23,6 @@ function personaToRow(p) {
     gender: p.gender || '',
     traits: p.traits || [],
     style: p.style || [],
-    temperature: p.temperature ?? 0.7,
     initiativeFrequency: p.initiativeFrequency || 'never',
     avatar: p.avatar || null,
   };
@@ -40,7 +39,6 @@ function rowToPersona(row) {
     gender: info.gender || '',
     traits: info.traits || [],
     style: info.style || [],
-    temperature: info.temperature ?? 0.7,
     initiativeFrequency: info.initiativeFrequency || 'never',
     avatar: info.avatar || null,
     createdAt: row.created_at,

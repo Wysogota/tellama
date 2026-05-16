@@ -30,13 +30,16 @@ export const AppProvider = ({ children }) => {
     const defaultSettings = { 
       host: 'http://localhost:8080',
       provider: 'llamacpp',   // 'llamacpp' | 'openrouter' | 'nvidia'
-      modelName: '',          // active model name / ID
-      model_llamacpp: '',
-      model_openrouter: '',
-      model_nvidia: '',
+      modelName: '',          // model name / ID for any provider
       theme: 'light', 
       accentColor: 'blue',
-      bgIntensity: 50 
+      bgIntensity: 50,
+      // LLM inference parameters (per-provider defaults applied in SettingsPanel)
+      temperature: 0.7,
+      top_p: 0.9,
+      top_k: 40,
+      max_tokens: 1024,
+      repeat_penalty: 1.1,
     };
     try {
       const ls = localStorage.getItem('tellama_settings');

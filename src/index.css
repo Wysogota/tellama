@@ -135,6 +135,18 @@ input, textarea {
   caret-color: #8774e1; /* Lilac color */
 }
 
+/* Hide number input spinners */
+input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type=number] {
+  -moz-appearance: textfield;
+}
+
+
 /* Ripple effect */
 .ripple-container {
   position: relative;
