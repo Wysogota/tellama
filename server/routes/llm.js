@@ -116,7 +116,16 @@ router.post('/proxy/:provider/chat/completions', async (req, res) => {
 
   if (baseProvider === 'dynamic') {
     baseProvider = ACTIVE_PROVIDER.replace(/^memory_/, '');
+    // If ACTIVE_MODEL is set, use it (allows upgrading existing Letta agents dynamically).
+    // Otherwise, trust the model Letta is asking for (fixes the gpt-3.5-turbo background leak).
     realModel = ACTIVE_MODEL || model;
+    
+    // Safety check: if somehow realModel is still the hardcoded 'openai-proxy/gpt-3.5-turbo' 
+    // from an old agent, we force it to a free model to avoid unexpected charges.
+    if (realModel.includes('gpt-3.5-turbo')) {
+      console.warn('[LLM Proxy] Intercepted gpt-3.5-turbo request! Falling back to a free model to prevent unwanted billing.');
+      realModel = 'mistralai/mistral-7b-instruct:free'; // OpenRouter free fallback
+    }
   }
 
   const config = PROVIDER_CONFIGS[baseProvider];
@@ -219,6 +228,7 @@ router.get('/proxy/:provider/models', (req, res) => {
   res.json({
     object: 'list',
     data: [
+      { id: ACTIVE_MODEL || 'tellama-dynamic-model', object: 'model', created: 1677610602, owned_by: 'tellama' },
       { id: 'gpt-3.5-turbo', object: 'model', created: 1677610602, owned_by: 'openai' },
       { id: 'openai/gpt-3.5-turbo', object: 'model', created: 1677610602, owned_by: 'openai' },
       { id: 'gpt-4o', object: 'model', created: 1677610602, owned_by: 'openai' },

@@ -131,7 +131,7 @@ export const createAgent = async (contact, activeUser, settings) => {
       { label: 'persona', value: formatPersonaBlock(contact) },
       { label: 'human',   value: formatHumanBlock(activeUser) }
     ],
-    model: 'openai-proxy/gpt-3.5-turbo',
+    model: settings?.modelName || 'tellama-dynamic-model',
     embedding_config: {
       embedding_model: 'text-embedding-ada-002',
       embedding_endpoint_type: 'openai',
@@ -188,7 +188,7 @@ export const resetAgentForPersona = async (contact, activeUser, settings) => {
       { label: 'persona', value: formatPersonaBlock(contact) },
       { label: 'human',   value: formatHumanBlock(activeUser) }
     ],
-    model: 'openai-proxy/gpt-3.5-turbo',
+    model: settings?.modelName || 'tellama-dynamic-model',
     embedding_config: {
       embedding_model: 'text-embedding-ada-002',
       embedding_endpoint_type: 'openai',
