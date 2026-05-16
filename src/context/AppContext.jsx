@@ -30,7 +30,10 @@ export const AppProvider = ({ children }) => {
     const defaultSettings = { 
       host: 'http://localhost:8080',
       provider: 'llamacpp',   // 'llamacpp' | 'openrouter' | 'nvidia'
-      modelName: '',          // model name / ID for any provider
+      modelName: '',          // active model name / ID
+      model_llamacpp: '',
+      model_openrouter: '',
+      model_nvidia: '',
       theme: 'light', 
       accentColor: 'blue',
       bgIntensity: 50 

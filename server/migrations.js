@@ -90,6 +90,13 @@ export function runServerMigrations() {
     )
   `);
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS favorite_models (
+      model_id   TEXT PRIMARY KEY,
+      created_at INTEGER NOT NULL
+    )
+  `);
+
   try {
     db.exec(`ALTER TABLE messages ADD COLUMN metadata TEXT DEFAULT '{}'`);
   } catch (e) {}

@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAppContext } from '../context/AppContext';
 import {
   Download, Save, Server, Globe, Cpu,
   Key, XCircle, Loader2, Check, ArrowLeft,
-  Moon, Sun, ChevronDown, ChevronUp, Palette, Brain, Layout
+  Moon, Sun, ChevronDown, ChevronUp, Palette, Brain, Layout, ExternalLink, Star,
+  Search, X, Eye, EyeOff
 } from 'lucide-react';
 
 const SERVER_URL = 'http://localhost:3001';
@@ -14,18 +15,21 @@ const PROVIDERS = [
     label: 'llama.cpp',
     desc: 'Local',
     Icon: Server,
+    iconUrl: `https://raw.githubusercontent.com/ggerganov/llama.cpp/master/media/llama1-logo.png`
   },
   {
     id: 'openrouter',
     label: 'OpenRouter',
     desc: 'Cloud',
     Icon: Globe,
+    iconUrl: `${SERVER_URL}/llm/icon?domain=openrouter.ai&sz=128`
   },
   {
     id: 'nvidia',
     label: 'NVIDIA NIM',
     desc: 'Cloud',
     Icon: Cpu,
+    iconUrl: `${SERVER_URL}/llm/icon?domain=nvidia.com&sz=128`
   },
 ];
 
@@ -33,6 +37,22 @@ const MODEL_PLACEHOLDERS = {
   llamacpp: 'e.g. mistral-7b',
   openrouter: 'e.g. openai/gpt-4o',
   nvidia: 'e.g. meta/llama-3.1',
+};
+
+const getModelBrandIcon = (modelId) => {
+  const id = modelId.toLowerCase();
+  const getUrl = (domain) => `${SERVER_URL}/llm/icon?domain=${domain}`;
+
+  if (id.includes('openai')) return getUrl('openai.com');
+  if (id.includes('google')) return getUrl('google.com');
+  if (id.includes('meta') || id.includes('llama')) return getUrl('meta.com');
+  if (id.includes('anthropic')) return getUrl('anthropic.com');
+  if (id.includes('mistral')) return getUrl('mistral.ai');
+  if (id.includes('cohere')) return getUrl('cohere.com');
+  if (id.includes('microsoft')) return getUrl('microsoft.com');
+  if (id.includes('nvidia')) return getUrl('nvidia.com');
+  if (id.includes('perplexity')) return getUrl('perplexity.ai');
+  return null;
 };
 
 const SettingsPanel = ({ onBack }) => {
@@ -45,6 +65,23 @@ const SettingsPanel = ({ onBack }) => {
   const [saveStatus, setSaveStatus] = useState({}); // provider -> status
   const [showKey, setShowKey] = useState({ openrouter: false, nvidia: false });
   const [expandedSection, setExpandedSection] = useState('appearance');
+  
+  const [modelsList, setModelsList] = useState([]);
+  const [modelsLoading, setModelsLoading] = useState(false);
+  const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
+  const [modelSearchQuery, setModelSearchQuery] = useState('');
+  
+  const modelDropdownRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (modelDropdownRef.current && !modelDropdownRef.current.contains(event.target)) {
+        setIsModelDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
   
   useEffect(() => {
     setLocalSettings(prev => ({ ...prev, theme: settings.theme }));
@@ -60,11 +97,38 @@ const SettingsPanel = ({ onBack }) => {
     });
   }, []);
 
+  useEffect(() => {
+    const provider = localSettings.provider || 'llamacpp';
+    
+    // Restore the model for this provider if it exists
+    const providerModel = localSettings[`model_${provider}`];
+    if (providerModel !== undefined && providerModel !== localSettings.modelName) {
+      setLocalSettings(prev => ({ ...prev, modelName: providerModel }));
+    }
+
+    if (provider === 'openrouter' || provider === 'nvidia') {
+      setModelsLoading(true);
+      fetch(`${SERVER_URL}/llm/models/${provider}`)
+        .then(res => res.json())
+        .then(data => {
+          setModelsList(Array.isArray(data) ? data : []);
+          setModelsLoading(false);
+        })
+        .catch(err => {
+          console.error('Failed to fetch models', err);
+          setModelsList([]);
+          setModelsLoading(false);
+        });
+    } else {
+      setModelsList([]);
+    }
+  }, [localSettings.provider]);
+
   // Debounce effect for text settings
   useEffect(() => {
     const timer = setTimeout(() => {
       const changed = {};
-      const keysToSync = ['modelName', 'host', 'bgIntensity', 'accentColor', 'provider'];
+      const keysToSync = ['modelName', 'host', 'bgIntensity', 'accentColor', 'provider', 'freeModelsOnly', 'model_llamacpp', 'model_openrouter', 'model_nvidia'];
       
       keysToSync.forEach(key => {
         if (localSettings[key] !== settings[key]) {
@@ -79,6 +143,32 @@ const SettingsPanel = ({ onBack }) => {
 
     return () => clearTimeout(timer);
   }, [localSettings, settings, updateSettings]);
+
+  const toggleFavorite = async (e, modelId, isFavorite) => {
+    e.stopPropagation();
+    try {
+      if (isFavorite) {
+        await fetch(`${SERVER_URL}/llm/favorites/${encodeURIComponent(modelId)}`, { method: 'DELETE' });
+      } else {
+        await fetch(`${SERVER_URL}/llm/favorites`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ modelId }),
+        });
+      }
+      
+      // Update local state
+      setModelsList(prev => prev.map(m => 
+        m.id === modelId ? { ...m, isFavorite: !isFavorite } : m
+      ).sort((a, b) => {
+        if (a.isFavorite && !b.isFavorite) return -1;
+        if (!a.isFavorite && b.isFavorite) return 1;
+        return a.name.localeCompare(b.name);
+      }));
+    } catch (err) {
+      console.error('Failed to toggle favorite', err);
+    }
+  };
 
   const handleSaveKey = async (provider) => {
     const key = keyInputs[provider].trim();
@@ -247,22 +337,28 @@ const SettingsPanel = ({ onBack }) => {
           {expandedSection === 'provider' && (
             <div className="px-5 pb-6 pt-2 space-y-4 animate-in slide-in-from-top-2 duration-200">
               <div className="grid grid-cols-3 gap-2 mt-2">
-                {PROVIDERS.map(({ id, label, desc, Icon }) => {
+                {PROVIDERS.map(({ id, label, Icon, iconUrl }) => {
                   const selected = currentProvider === id;
                   return (
                     <button
                       key={id}
                       onClick={() => setLocalSettings({ ...localSettings, provider: id })}
-                      className={`flex flex-col items-center gap-1 p-2 rounded-xl border-2 transition-all text-center
+                      className={`flex flex-col items-center gap-1.5 p-2 rounded-xl border-2 transition-all text-center
                         ${selected
                           ? 'border-[var(--tg-link-color)] bg-[var(--tg-link-color)]/10'
-                          : 'border-[var(--tg-border-color)] hover:border-[var(--tg-link-color)]/40 bg-[var(--tg-secondary-bg-color)]'
+                          : 'border-[var(--tg-border-color)] hover:border-[var(--tg-link-color)]/60 bg-[var(--tg-secondary-bg-color)]'
                         }`}
                     >
-                      <Icon
-                        size={20}
-                        className={selected ? 'text-[var(--tg-link-color)]' : 'text-[var(--tg-hint-color)]'}
-                      />
+                      <div className="w-12 h-7 flex items-center justify-center overflow-hidden mb-0.5">
+                        {iconUrl ? (
+                          <img src={iconUrl} className={`w-full h-full object-contain ${selected ? '' : 'opacity-70 grayscale-[0.5]'}`} alt="" />
+                        ) : (
+                          <Icon
+                            size={20}
+                            className={selected ? 'text-[var(--tg-link-color)]' : 'text-[var(--tg-hint-color)]'}
+                          />
+                        )}
+                      </div>
                       <span className={`text-[11px] font-semibold leading-tight ${selected ? 'text-[var(--tg-link-color)]' : 'text-[var(--tg-text-color)]'}`}>
                         {label}
                       </span>
@@ -272,16 +368,166 @@ const SettingsPanel = ({ onBack }) => {
               </div>
 
               <div className="space-y-3">
-                <div>
-                  <label className="block text-[11px] text-[var(--tg-hint-color)] mb-1">Model Name</label>
-                  <input
-                    type="text"
-                    value={localSettings.modelName || ''}
-                    onChange={(e) => setLocalSettings({ ...localSettings, modelName: e.target.value })}
-                    placeholder={MODEL_PLACEHOLDERS[currentProvider]}
-                    className="w-full bg-[var(--tg-secondary-bg-color)] text-[var(--tg-text-color)] border border-[var(--tg-border-color)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--tg-link-color)] transition-colors"
-                  />
-                </div>
+                {needsApiKey ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="block text-[11px] text-[var(--tg-hint-color)]">Model Name</label>
+                      {currentProvider === 'openrouter' && (
+                        <button
+                          onClick={() => setLocalSettings(prev => ({ ...prev, freeModelsOnly: !prev.freeModelsOnly }))}
+                          className={`text-[10px] px-2 py-0.5 rounded-full transition-colors border ${
+                            localSettings.freeModelsOnly 
+                              ? 'bg-[var(--tg-link-color)] text-white border-[var(--tg-link-color)]' 
+                              : 'bg-transparent text-[var(--tg-hint-color)] border-[var(--tg-border-color)] hover:border-[var(--tg-link-color)]/40'
+                          }`}
+                        >
+                          Free Models Only
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex gap-2 items-center">
+                      <div className="relative flex-grow" ref={modelDropdownRef}>
+                        <button
+                          onClick={() => !modelsLoading && setIsModelDropdownOpen(!isModelDropdownOpen)}
+                          className={`w-full flex items-center justify-between bg-[var(--tg-secondary-bg-color)] text-[var(--tg-text-color)] border border-[var(--tg-border-color)] rounded-lg px-3 py-2 text-sm outline-none hover:border-[var(--tg-link-color)]/40 transition-all ${isModelDropdownOpen ? 'border-[var(--tg-link-color)] ring-1 ring-[var(--tg-link-color)]/20' : ''}`}
+                        >
+                          <div className="flex items-center gap-2 truncate">
+                            {localSettings.modelName ? (
+                              getModelBrandIcon(localSettings.modelName) ? (
+                                <div className="w-4 h-4 rounded-full overflow-hidden flex-shrink-0">
+                                  <img src={getModelBrandIcon(localSettings.modelName)} className="w-full h-full object-contain" alt="" />
+                                </div>
+                              ) : (
+                                <Brain size={16} className="text-[var(--tg-link-color)] flex-shrink-0" />
+                              )
+                            ) : (
+                              <Brain size={16} className="text-[var(--tg-link-color)] flex-shrink-0" />
+                            )}
+                            <span className="truncate">
+                              {modelsLoading ? 'Loading models...' : (localSettings.modelName || 'Select a model')}
+                            </span>
+                          </div>
+                          <ChevronDown size={14} className={`text-[var(--tg-hint-color)] transition-transform duration-200 ${isModelDropdownOpen ? 'rotate-180' : ''}`} />
+                        </button>
+
+                        {isModelDropdownOpen && (
+                          <div className="absolute top-[calc(100%+4px)] left-0 right-0 max-h-[300px] overflow-y-auto bg-[var(--tg-search-bg)] border border-[var(--tg-border-color)] rounded-xl shadow-2xl z-[60] custom-scrollbar animate-in fade-in zoom-in-95 duration-200 origin-top">
+                            <div className="mx-1 w-[calc(100%-8px)] px-2 py-3 border-b border-[var(--tg-border-color)] sticky top-0 bg-[var(--tg-search-bg)] z-[70]">
+                              <div className="relative">
+                                <Search size={20} className="absolute left-[6px] top-1/2 -translate-y-1/2 text-[var(--tg-hint-color)]" />
+                                <input 
+                                  type="text" 
+                                  value={modelSearchQuery}
+                                  onChange={(e) => setModelSearchQuery(e.target.value)}
+                                  placeholder="Search models..."
+                                  className="w-full bg-transparent text-[var(--tg-text-color)] text-[15px] pl-[44px] pr-8 py-1 outline-none border-none transition-colors"
+                                  autoFocus
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                                {modelSearchQuery && (
+                                  <button 
+                                    onClick={(e) => { e.stopPropagation(); setModelSearchQuery(''); }}
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-[var(--tg-hint-color)] hover:text-[var(--tg-text-color)]"
+                                  >
+                                    <X size={14} />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                            <div className="py-2">
+                              {modelsList
+                                .filter(m => (!localSettings.freeModelsOnly || m.isFree) && (m.name.toLowerCase().includes(modelSearchQuery.toLowerCase()) || m.id.toLowerCase().includes(modelSearchQuery.toLowerCase())))
+                                .map(m => (
+                                <div
+                                  key={m.id}
+                                  onClick={() => {
+                                    const provider = localSettings.provider || 'llamacpp';
+                                    setLocalSettings({ 
+                                      ...localSettings, 
+                                      modelName: m.id,
+                                      [`model_${provider}`]: m.id
+                                    });
+                                    setIsModelDropdownOpen(false);
+                                  }}
+                                  className={`w-[calc(100%-8px)] mx-1 flex items-center gap-3 px-2 py-2 hover:bg-[var(--tg-border-color)] transition-colors rounded-xl text-left cursor-pointer group ${localSettings.modelName === m.id ? 'bg-[var(--tg-border-color)]' : ''}`}
+                                >
+                                  <div className="w-8 h-8 rounded-full bg-[var(--tg-secondary-bg-color)] flex items-center justify-center text-[var(--tg-link-color)] flex-shrink-0 overflow-hidden">
+                                    {getModelBrandIcon(m.id) ? (
+                                      <img src={getModelBrandIcon(m.id)} className="w-full h-full rounded-full object-contain" alt="" />
+                                    ) : (
+                                      <Brain size={18} />
+                                    )}
+                                  </div>
+                                  <div className="flex-grow min-w-0">
+                                    <div className="flex items-center justify-between gap-2">
+                                      <span className={`text-[15px] font-semibold truncate ${localSettings.modelName === m.id ? 'text-[var(--tg-link-color)]' : 'text-[var(--tg-text-color)]'}`}>
+                                        {m.name}
+                                      </span>
+                                      <div className="flex items-center gap-0.5 flex-shrink-0">
+                                        {m.isFree && (
+                                          <div className="flex items-center gap-1 bg-green-500/10 text-green-500 px-1.5 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider border border-green-500/20 mr-1">
+                                            Free
+                                          </div>
+                                        )}
+                                        <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                          <a 
+                                            href={m.link} 
+                                            target="_blank" 
+                                            rel="noreferrer"
+                                            onClick={(e) => e.stopPropagation()}
+                                            className="p-1.5 rounded-lg text-[var(--tg-hint-color)] hover:bg-[var(--tg-link-color)]/10 hover:text-[var(--tg-link-color)] transition-colors"
+                                            title="View Model Info"
+                                          >
+                                            <ExternalLink size={14} />
+                                          </a>
+                                        </div>
+                                        <button
+                                          onClick={(e) => toggleFavorite(e, m.id, m.isFavorite)}
+                                          className={`p-1.5 rounded-lg transition-colors ${m.isFavorite ? 'text-yellow-500 hover:bg-yellow-500/10' : 'text-[var(--tg-hint-color)] hover:bg-[var(--tg-hint-color)]/10'}`}
+                                          title={m.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+                                        >
+                                          <Star size={14} fill={m.isFavorite ? "currentColor" : "none"} />
+                                        </button>
+                                      </div>
+                                    </div>
+                                    <p className="text-[12px] text-[var(--tg-hint-color)] truncate opacity-70">
+                                      {m.id}
+                                    </p>
+                                  </div>
+                                </div>
+                              ))
+                            }
+                            {modelsList.filter(m => (!localSettings.freeModelsOnly || m.isFree) && (m.name.toLowerCase().includes(modelSearchQuery.toLowerCase()) || m.id.toLowerCase().includes(modelSearchQuery.toLowerCase()))).length === 0 && !modelsLoading && (
+                              <div className="px-4 py-8 text-center text-[var(--tg-hint-color)] text-sm italic">
+                                No models found
+                              </div>
+                            )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-[11px] text-[var(--tg-hint-color)] mb-1">Model Name</label>
+                    <input
+                      type="text"
+                      value={localSettings.modelName || ''}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        const provider = localSettings.provider || 'llamacpp';
+                        setLocalSettings({ 
+                          ...localSettings, 
+                          modelName: val,
+                          [`model_${provider}`]: val 
+                        });
+                      }}
+                      placeholder={MODEL_PLACEHOLDERS[currentProvider]}
+                      className="w-full bg-[var(--tg-secondary-bg-color)] text-[var(--tg-text-color)] border border-[var(--tg-border-color)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--tg-link-color)] transition-colors"
+                    />
+                  </div>
+                )}
 
                 {currentProvider === 'llamacpp' && (
                   <div>
@@ -297,36 +543,72 @@ const SettingsPanel = ({ onBack }) => {
                 )}
 
                 {needsApiKey && (
-                  <div>
-                    <label className="block text-[11px] text-[var(--tg-hint-color)] mb-1 flex items-center justify-between">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <span>API Key</span>
-                        {saveStatus[currentProvider] === 'saving' && <Loader2 size={10} className="animate-spin" />}
-                        {saveStatus[currentProvider] === 'saved' && <Check size={10} className="text-green-500" />}
-                        {saveStatus[currentProvider] === 'error' && <span className="text-red-500 text-[9px]">Error</span>}
+                        <label className="text-[11px] font-medium text-[var(--tg-hint-color)] tracking-wider">API Key</label>
+                        {saveStatus[currentProvider] === 'saving' && <Loader2 size={10} className="animate-spin text-[var(--tg-link-color)]" />}
+                        {saveStatus[currentProvider] === 'saved' && (
+                          <div className="flex items-center gap-1 text-green-500 text-[10px] animate-in fade-in zoom-in duration-300">
+                            <Check size={10} /> <span>Saved</span>
+                          </div>
+                        )}
+                        {saveStatus[currentProvider] === 'error' && <span className="text-red-500 text-[10px]">Failed to save</span>}
                       </div>
                       {keyStatus[currentProvider] && (
-                        <button onClick={() => handleClearKey(currentProvider)} className="text-red-400 hover:text-red-500 text-[10px]">Remove</button>
+                        <button 
+                          onClick={() => handleClearKey(currentProvider)} 
+                          className="text-red-400 hover:text-red-500 text-[10px] hover:underline transition-all"
+                        >
+                          Reset Key
+                        </button>
                       )}
-                    </label>
-                    <div className="relative">
+                    </div>
+                    
+                    <div className="relative group">
+                      <div className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--tg-hint-color)] group-focus-within:text-[var(--tg-link-color)] transition-colors pointer-events-none">
+                        <Key size={14} />
+                      </div>
                       <input
                         type={showKey[currentProvider] ? 'text' : 'password'}
                         value={keyInputs[currentProvider]}
                         onChange={(e) => setKeyInputs(prev => ({ ...prev, [currentProvider]: e.target.value }))}
-                        onBlur={() => handleSaveKey(currentProvider)}
                         onKeyDown={(e) => e.key === 'Enter' && handleSaveKey(currentProvider)}
-                        placeholder={keyStatus[currentProvider] ? '••••••••' : 'Enter key...'}
-                        className="w-full bg-[var(--tg-secondary-bg-color)] text-[var(--tg-text-color)] border border-[var(--tg-border-color)] rounded-lg pl-3 pr-10 py-2 text-sm outline-none focus:border-[var(--tg-link-color)] transition-colors font-mono"
+                        placeholder={keyStatus[currentProvider] ? 'Key is configured ••••••••' : 'Enter your API key...'}
+                        disabled={keyStatus[currentProvider] && !keyInputs[currentProvider].trim()}
+                        className={`w-full bg-[var(--tg-secondary-bg-color)] text-[var(--tg-text-color)] border border-[var(--tg-border-color)] rounded-xl pl-10 pr-10 py-2.5 text-sm outline-none focus:border-[var(--tg-link-color)] focus:ring-1 focus:ring-[var(--tg-link-color)]/20 transition-all font-mono ${keyStatus[currentProvider] && !keyInputs[currentProvider].trim() ? 'opacity-50 pointer-events-none' : ''}`}
                       />
-                      <button
-                        type="button"
-                        onClick={() => setShowKey(prev => ({ ...prev, [currentProvider]: !prev[currentProvider] }))}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--tg-hint-color)]"
-                      >
-                        {showKey[currentProvider] ? <XCircle size={14} /> : <Key size={14} />}
-                      </button>
+                      <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                        {(!keyStatus[currentProvider] || keyInputs[currentProvider].trim()) && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => setShowKey(prev => ({ ...prev, [currentProvider]: !prev[currentProvider] }))}
+                              className="p-1.5 text-[var(--tg-hint-color)] hover:text-[var(--tg-text-color)] hover:bg-[var(--tg-sidebar-hover)] rounded-lg transition-colors"
+                              title={showKey[currentProvider] ? "Hide Key" : "Show Key"}
+                            >
+                              {showKey[currentProvider] ? <EyeOff size={16} /> : <Eye size={16} />}
+                            </button>
+                            {keyInputs[currentProvider].trim() && (
+                              <button
+                                onClick={() => handleSaveKey(currentProvider)}
+                                disabled={saveStatus[currentProvider] === 'saving'}
+                                className="bg-[var(--tg-link-color)] text-white px-3 py-1 rounded-lg text-[11px] font-semibold hover:opacity-90 active:scale-95 transition-all shadow-sm"
+                              >
+                                {saveStatus[currentProvider] === 'saving' ? '...' : 'Save'}
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
                     </div>
+                    {!keyStatus[currentProvider] && !keyInputs[currentProvider] && (
+                      <p className="text-[10px] text-[var(--tg-hint-color)] mt-1 opacity-60">
+                        {currentProvider === 'openrouter' 
+                          ? 'Your key is stored locally and never leaves your browser/server.' 
+                          : 'Get your API key from the NVIDIA NIM dashboard.'}
+                      </p>
+                    )}
                   </div>
                 )}
               </div>

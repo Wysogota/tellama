@@ -210,4 +210,148 @@ router.get('/proxy/:provider/models', (req, res) => {
   });
 });
 
+const formatModelName = (id) => {
+  if (!id) return '';
+  // Remove vendor prefix if present (e.g., 'meta/' or 'mistralai/')
+  const parts = id.split('/');
+  let name = parts[parts.length - 1];
+
+  // Replace hyphens and underscores with spaces
+  name = name.replace(/[-_]/g, ' ');
+
+  // Capitalize each word
+  return name
+    .split(' ')
+    .map(word => {
+      if (!word) return '';
+      // Keep things like '7B', '8B', 'IT' as they are or uppercase them
+      if (/^\d+[bB]$/.test(word)) return word.toUpperCase();
+      if (word.toLowerCase() === 'it') return 'IT';
+      return word.charAt(0).toUpperCase() + word.slice(1);
+    })
+    .join(' ');
+};
+
+// Fetch models from providers for the UI
+router.get('/models/:provider', async (req, res) => {
+  const provider = req.params.provider;
+
+  try {
+    const favorites = db.prepare('SELECT model_id FROM favorite_models').all().map(r => r.model_id);
+    const isFav = (id) => favorites.includes(id);
+
+    if (provider === 'openrouter') {
+      const resp = await fetch('https://openrouter.ai/api/v1/models');
+      const data = await resp.json();
+
+      const seenIds = new Set();
+      const filtered = data.data.filter(m => {
+        if (seenIds.has(m.id)) return false;
+        seenIds.add(m.id);
+
+        // Filter models that support tools (for Letta)
+        const hasTools = m.supported_parameters?.includes('tools') || m.supported_parameters?.includes('tool_choice');
+        return hasTools;
+      }).map(m => {
+        const isFree = m.pricing?.prompt === "0" || m.pricing?.prompt === 0 || m.id.endsWith(':free');
+        return {
+          id: m.id,
+          name: m.name || formatModelName(m.id),
+          isFree: isFree,
+          isFavorite: isFav(m.id),
+          link: `https://openrouter.ai/${m.id}`
+        };
+      });
+
+      // Sort models: favorites first, then alphabetically
+      filtered.sort((a, b) => {
+        if (a.isFavorite && !b.isFavorite) return -1;
+        if (!a.isFavorite && b.isFavorite) return 1;
+        return a.name.localeCompare(b.name);
+      });
+
+      res.json(filtered);
+    } else if (provider === 'nvidia') {
+      const resp = await fetch('https://integrate.api.nvidia.com/v1/models');
+      const data = await resp.json();
+
+      const seenIds = new Set();
+      const mapped = data.data
+        .filter(m => {
+          if (seenIds.has(m.id)) return false;
+          seenIds.add(m.id);
+          return true;
+        })
+        .map(m => ({
+          id: m.id,
+          name: formatModelName(m.id),
+          isFree: false,
+          isFavorite: isFav(m.id),
+          link: `https://build.nvidia.com/${m.id}/modelcard`
+        }));
+
+      mapped.sort((a, b) => {
+        if (a.isFavorite && !b.isFavorite) return -1;
+        if (!a.isFavorite && b.isFavorite) return 1;
+        return a.name.localeCompare(b.name);
+      });
+      res.json(mapped);
+    } else {
+      res.json([]);
+    }
+  } catch (e) {
+    console.error(`[LLM Models] ${provider} error:`, e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Icon proxy to avoid CORP/CORS issues
+router.get('/icon', async (req, res) => {
+  const { domain } = req.query;
+  if (!domain) return res.status(400).end();
+  try {
+    const iconUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=128`;
+    const resp = await fetch(iconUrl);
+    const buffer = await resp.arrayBuffer();
+    res.setHeader('Content-Type', resp.headers.get('Content-Type') || 'image/png');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.send(Buffer.from(buffer));
+  } catch (e) {
+    res.status(500).end();
+  }
+});
+
+// ── Favorite Models ─────────────────────────────────────────────────────────
+
+router.get('/favorites', (req, res) => {
+  try {
+    const rows = db.prepare('SELECT model_id FROM favorite_models').all();
+    res.json(rows.map(r => r.model_id));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/favorites', (req, res) => {
+  const { modelId } = req.body;
+  if (!modelId) return res.status(400).json({ error: 'Missing modelId' });
+  try {
+    db.prepare('INSERT OR IGNORE INTO favorite_models (model_id, created_at) VALUES (?, ?)').run(modelId, Date.now());
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.delete('/favorites/:modelId', (req, res) => {
+  const { modelId } = req.params;
+  try {
+    db.prepare('DELETE FROM favorite_models WHERE model_id = ?').run(modelId);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 export default router;
