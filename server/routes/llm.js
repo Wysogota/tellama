@@ -20,7 +20,23 @@ const PROVIDER_CONFIGS = {
       'Accept': 'text/event-stream',
     },
   },
+  llamacpp: {
+    baseUrl: 'http://127.0.0.1:8080/v1',
+    extraHeaders: {},
+  },
 };
+
+// ── Active Settings State (In-Memory) ───────────────────────────────────────
+let ACTIVE_PROVIDER = 'openrouter';
+let ACTIVE_MODEL = '';
+
+// POST /llm/active-provider
+router.post('/active-provider', (req, res) => {
+  const { provider, model } = req.body;
+  if (provider) ACTIVE_PROVIDER = provider;
+  if (model) ACTIVE_MODEL = model;
+  res.json({ ok: true });
+});
 
 // ── Key management ──────────────────────────────────────────────────────────
 
@@ -74,30 +90,41 @@ router.delete('/keys/:provider', (req, res) => {
 
 // ── Streaming proxy ─────────────────────────────────────────────────────────
 
-// POST /llm/proxy  — forwards chat/completions to OpenRouter or NVIDIA, injects key server-side
-router.post('/proxy', async (req, res) => {
-  const { provider, messages, model, temperature } = req.body;
+// POST /llm/proxy/:provider/chat/completions  — forwards chat/completions to OpenRouter or NVIDIA or llamacpp
+router.post('/proxy/:provider/chat/completions', async (req, res) => {
+  const provider = req.params.provider;
+  const { messages, model, temperature } = req.body;
 
   if (!provider || !messages) {
     return res.status(400).json({ error: 'Missing provider or messages' });
   }
 
-  const baseProvider = provider.replace(/^memory_/, '');
+  let baseProvider = provider.replace(/^memory_/, '');
+  let realModel = model;
+
+  if (baseProvider === 'dynamic') {
+    baseProvider = ACTIVE_PROVIDER.replace(/^memory_/, '');
+    realModel = ACTIVE_MODEL || model;
+  }
+
   const config = PROVIDER_CONFIGS[baseProvider];
   if (!config) {
-    return res.status(400).json({ error: `Unknown provider "${provider}". Use llamacpp (direct) or openrouter/nvidia (proxy).` });
+    return res.status(400).json({ error: `Unknown provider "${baseProvider}". Use llamacpp, openrouter, or nvidia.` });
   }
 
   // Read key — if missing, tell the user clearly
-  let apiKey;
-  try {
-    const row = db.prepare('SELECT key_value FROM api_keys WHERE provider = ?').get(provider);
-    if (!row) {
-      return res.status(401).json({ error: `API key for ${provider} is not configured. Add it in Settings.` });
+
+  let apiKey = '';
+  if (baseProvider !== 'llamacpp') {
+    try {
+      const row = db.prepare('SELECT key_value FROM api_keys WHERE provider = ?').get(baseProvider);
+      if (!row) {
+        return res.status(401).json({ error: `API key for ${baseProvider} is not configured. Add it in Settings.` });
+      }
+      apiKey = row.key_value;
+    } catch (e) {
+      return res.status(500).json({ error: 'Failed to read API key: ' + e.message });
     }
-    apiKey = row.key_value;
-  } catch (e) {
-    return res.status(500).json({ error: 'Failed to read API key: ' + e.message });
   }
 
   const abortController = new AbortController();
@@ -111,7 +138,7 @@ router.post('/proxy', async (req, res) => {
 
   try {
     const upstreamUrl = `${config.baseUrl}/chat/completions`;
-    console.log(`[LLM Proxy] → ${provider} ${upstreamUrl} model=${model}`);
+    console.log(`[LLM Proxy] → ${baseProvider} ${upstreamUrl} model=${realModel}`);
 
     const upstream = await fetch(upstreamUrl, {
       method: 'POST',
@@ -121,32 +148,40 @@ router.post('/proxy', async (req, res) => {
         ...config.extraHeaders,
       },
       body: JSON.stringify({
-        model: model || undefined,
+        model: realModel || undefined,
         messages,
-        stream: true,
+        stream: req.body.stream ?? false,
         temperature: temperature ?? 0.7,
       }),
       signal: abortController.signal,
     });
 
-    console.log(`[LLM Proxy] ← ${provider} status=${upstream.status}`);
+    console.log(`[LLM Proxy] ← ${baseProvider} status=${upstream.status}`);
 
     if (!upstream.ok) {
       const errText = await upstream.text().catch(() => upstream.statusText);
-      console.error(`[LLM Proxy] ${provider} error ${upstream.status}: ${errText}`);
+      console.error(`[LLM Proxy] ${baseProvider} error ${upstream.status}: ${errText}`);
       return res.status(upstream.status).json({
-        error: `${provider} API error ${upstream.status}: ${errText}`,
+        error: `${baseProvider} API error ${upstream.status}: ${errText}`,
       });
     }
 
-    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
-    res.setHeader('Cache-Control', 'no-cache, no-transform');
-    res.setHeader('X-Accel-Buffering', 'no');
-    res.flushHeaders();
+    const isStreaming = req.body.stream ?? false;
 
-    const nodeStream = Readable.fromWeb(upstream.body);
-    nodeStream.pipe(res);
-    nodeStream.on('error', () => { if (!res.writableEnded) res.end(); });
+    if (isStreaming) {
+      res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-cache, no-transform');
+      res.setHeader('X-Accel-Buffering', 'no');
+      res.flushHeaders();
+
+      const nodeStream = Readable.fromWeb(upstream.body);
+      nodeStream.pipe(res);
+      nodeStream.on('error', () => { if (!res.writableEnded) res.end(); });
+    } else {
+      // Non-streaming: forward JSON body as-is
+      const json = await upstream.json();
+      res.json(json);
+    }
 
   } catch (e) {
     if (e.name === 'AbortError') {
@@ -158,6 +193,21 @@ router.post('/proxy', async (req, res) => {
     if (!res.headersSent) res.status(500).json({ error: e.message });
     else res.end();
   }
+});
+
+// Mock /models endpoint to bypass Letta's model validation
+router.get('/proxy/:provider/models', (req, res) => {
+  res.json({
+    object: 'list',
+    data: [
+      { id: 'gpt-3.5-turbo', object: 'model', created: 1677610602, owned_by: 'openai' },
+      { id: 'openai/gpt-3.5-turbo', object: 'model', created: 1677610602, owned_by: 'openai' },
+      { id: 'gpt-4o', object: 'model', created: 1677610602, owned_by: 'openai' },
+      { id: 'openai/gpt-4o', object: 'model', created: 1677610602, owned_by: 'openai' },
+      { id: 'mistralai/mistral-nemotron', object: 'model', created: 1677610602, owned_by: 'openrouter' },
+      { id: 'test-model', object: 'model', created: 1677610602, owned_by: 'test' }
+    ]
+  });
 });
 
 export default router;

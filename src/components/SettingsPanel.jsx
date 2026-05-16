@@ -39,11 +39,11 @@ const SettingsPanel = ({ onBack }) => {
   const { settings, updateSettings, personas, messages } = useAppContext();
   const [localSettings, setLocalSettings] = useState({ ...settings });
 
-  const [keyInputs, setKeyInputs] = useState({ openrouter: '', nvidia: '', memory_openrouter: '', memory_nvidia: '' });
-  const [keyStatus, setKeyStatus] = useState({ openrouter: false, nvidia: false, memory_openrouter: false, memory_nvidia: false });
+  const [keyInputs, setKeyInputs] = useState({ openrouter: '', nvidia: '' });
+  const [keyStatus, setKeyStatus] = useState({ openrouter: false, nvidia: false });
   const [keyLoading, setKeyLoading] = useState(true);
   const [saveStatus, setSaveStatus] = useState({}); // provider -> status
-  const [showKey, setShowKey] = useState({ openrouter: false, nvidia: false, memory_openrouter: false, memory_nvidia: false });
+  const [showKey, setShowKey] = useState({ openrouter: false, nvidia: false });
   const [expandedSection, setExpandedSection] = useState('appearance');
   
   useEffect(() => {
@@ -54,10 +54,8 @@ const SettingsPanel = ({ onBack }) => {
     Promise.all([
       fetch(`${SERVER_URL}/llm/key-status?provider=openrouter`).then(r => r.json()).catch(() => ({ configured: false })),
       fetch(`${SERVER_URL}/llm/key-status?provider=nvidia`).then(r => r.json()).catch(() => ({ configured: false })),
-      fetch(`${SERVER_URL}/llm/key-status?provider=memory_openrouter`).then(r => r.json()).catch(() => ({ configured: false })),
-      fetch(`${SERVER_URL}/llm/key-status?provider=memory_nvidia`).then(r => r.json()).catch(() => ({ configured: false })),
-    ]).then(([or, nv, mor, mnv]) => {
-      setKeyStatus({ openrouter: or.configured, nvidia: nv.configured, memory_openrouter: mor.configured, memory_nvidia: mnv.configured });
+    ]).then(([or, nv]) => {
+      setKeyStatus({ openrouter: or.configured, nvidia: nv.configured });
       setKeyLoading(false);
     });
   }, []);
@@ -66,7 +64,7 @@ const SettingsPanel = ({ onBack }) => {
   useEffect(() => {
     const timer = setTimeout(() => {
       const changed = {};
-      const keysToSync = ['modelName', 'host', 'memoryModelName', 'memoryHost', 'memoryInterval', 'bgIntensity', 'accentColor', 'memoryEnabled', 'provider', 'memoryProvider'];
+      const keysToSync = ['modelName', 'host', 'bgIntensity', 'accentColor', 'provider'];
       
       keysToSync.forEach(key => {
         if (localSettings[key] !== settings[key]) {
@@ -126,9 +124,7 @@ const SettingsPanel = ({ onBack }) => {
   const currentProvider = localSettings.provider || 'llamacpp';
   const needsApiKey = currentProvider === 'openrouter' || currentProvider === 'nvidia';
 
-  const memProvider = localSettings.memoryProvider || 'llamacpp';
-  const memNeedsApiKey = memProvider === 'openrouter' || memProvider === 'nvidia';
-  const memKeyName = 'memory_' + memProvider;
+
 
   return (
     <div className="flex flex-col h-full bg-[var(--tg-bg-color)]">
@@ -338,144 +334,7 @@ const SettingsPanel = ({ onBack }) => {
           )}
         </div>
 
-        {/* Memory System Section */}
-        <div className="mt-1">
-          <button 
-            onClick={() => setExpandedSection(expandedSection === 'memory' ? null : 'memory')}
-            className="mx-2 w-[calc(100%-16px)] flex items-center gap-3 px-3 py-2.5 hover:bg-[var(--tg-sidebar-hover)] transition-all text-left rounded-xl group"
-          >
-            <div className="w-10 h-10 rounded-full bg-[var(--tg-secondary-bg-color)] flex items-center justify-center text-[var(--tg-hint-color)] group-hover:text-[var(--tg-link-color)] transition-colors">
-              <Brain size={20} />
-            </div>
-            <div className="flex-grow">
-              <div className="text-[15px] font-semibold text-[var(--tg-text-color)]">Memory System</div>
-              <div className="text-[12px] text-[var(--tg-hint-color)]">Long-term context and extraction</div>
-            </div>
-            {expandedSection === 'memory' ? <ChevronUp size={20} className="text-[var(--tg-hint-color)]" /> : <ChevronDown size={20} className="text-[var(--tg-hint-color)]" />}
-          </button>
 
-          {expandedSection === 'memory' && (
-            <div className="px-5 pb-6 pt-2 space-y-4 animate-in slide-in-from-top-2 duration-200">
-              <div className="flex justify-between items-center mt-2">
-                <span className="text-[14px] text-[var(--tg-text-color)] font-medium">
-                  Enable Memory
-                </span>
-                <label className="flex items-center cursor-pointer relative">
-                  <input 
-                    type="checkbox" 
-                    className="sr-only" 
-                    checked={localSettings.memoryEnabled ?? true}
-                    onChange={(e) => setLocalSettings({ ...localSettings, memoryEnabled: e.target.checked })}
-                  />
-                  <div className={`block w-11 h-6 rounded-full transition-colors ${localSettings.memoryEnabled !== false ? 'bg-[var(--tg-link-color)]' : 'bg-[var(--tg-sidebar-hover)]'}`}></div>
-                  <div className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform duration-200 ${localSettings.memoryEnabled !== false ? 'transform translate-x-5' : ''}`}></div>
-                </label>
-              </div>
-
-              {(localSettings.memoryEnabled !== false) && (
-                <>
-                  <div>
-                    <label className="block text-[11px] text-[var(--tg-hint-color)] mb-1">
-                      Extraction Interval (messages)
-                    </label>
-                    <input
-                      type="number"
-                      min="1"
-                      value={localSettings.memoryInterval ?? 10}
-                      onChange={(e) => setLocalSettings({ ...localSettings, memoryInterval: parseInt(e.target.value) || 10 })}
-                      className="w-full bg-[var(--tg-secondary-bg-color)] text-[var(--tg-text-color)] border border-[var(--tg-border-color)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--tg-link-color)] transition-colors"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-2">
-                    {PROVIDERS.map(({ id, label, desc, Icon }) => {
-                      const selected = memProvider === id;
-                      return (
-                        <button
-                          key={'mem-' + id}
-                          onClick={() => setLocalSettings({ ...localSettings, memoryProvider: id })}
-                          className={`flex flex-col items-center gap-1 p-2 rounded-xl border-2 transition-all text-center
-                            ${selected
-                              ? 'border-[var(--tg-link-color)] bg-[var(--tg-link-color)]/10'
-                              : 'border-[var(--tg-border-color)] hover:border-[var(--tg-link-color)]/40 bg-[var(--tg-secondary-bg-color)]'
-                            }`}
-                        >
-                          <Icon
-                            size={20}
-                            className={selected ? 'text-[var(--tg-link-color)]' : 'text-[var(--tg-hint-color)]'}
-                          />
-                          <span className={`text-[11px] font-semibold leading-tight ${selected ? 'text-[var(--tg-link-color)]' : 'text-[var(--tg-text-color)]'}`}>
-                            {label}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  <div className="space-y-3">
-                    <div>
-                      <label className="block text-[11px] text-[var(--tg-hint-color)] mb-1">Memory Model Name</label>
-                      <input
-                        type="text"
-                        value={localSettings.memoryModelName || ''}
-                        onChange={(e) => setLocalSettings({ ...localSettings, memoryModelName: e.target.value })}
-                        placeholder={MODEL_PLACEHOLDERS[memProvider]}
-                        className="w-full bg-[var(--tg-secondary-bg-color)] text-[var(--tg-text-color)] border border-[var(--tg-border-color)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--tg-link-color)] transition-colors"
-                      />
-                    </div>
-
-                    {memProvider === 'llamacpp' && (
-                      <div>
-                        <label className="block text-[11px] text-[var(--tg-hint-color)] mb-1">Memory API Host</label>
-                        <input
-                          type="text"
-                          value={localSettings.memoryHost || ''}
-                          onChange={(e) => setLocalSettings({ ...localSettings, memoryHost: e.target.value })}
-                          placeholder="http://localhost:8080"
-                          className="w-full bg-[var(--tg-secondary-bg-color)] text-[var(--tg-text-color)] border border-[var(--tg-border-color)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--tg-link-color)] transition-colors"
-                        />
-                      </div>
-                    )}
-
-                    {memNeedsApiKey && (
-                      <div>
-                        <label className="block text-[11px] text-[var(--tg-hint-color)] mb-1 flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <span>Memory API Key</span>
-                            {saveStatus[memKeyName] === 'saving' && <Loader2 size={10} className="animate-spin" />}
-                            {saveStatus[memKeyName] === 'saved' && <Check size={10} className="text-green-500" />}
-                            {saveStatus[memKeyName] === 'error' && <span className="text-red-500 text-[9px]">Error</span>}
-                          </div>
-                          {keyStatus[memKeyName] && (
-                            <button onClick={() => handleClearKey(memKeyName)} className="text-red-400 hover:text-red-500 text-[10px]">Remove</button>
-                          )}
-                        </label>
-                        <div className="relative">
-                          <input
-                            type={showKey[memKeyName] ? 'text' : 'password'}
-                            value={keyInputs[memKeyName]}
-                            onChange={(e) => setKeyInputs(prev => ({ ...prev, [memKeyName]: e.target.value }))}
-                            onBlur={() => handleSaveKey(memKeyName)}
-                            onKeyDown={(e) => e.key === 'Enter' && handleSaveKey(memKeyName)}
-                            placeholder={keyStatus[memKeyName] ? '••••••••' : 'Enter key...'}
-                            className="w-full bg-[var(--tg-secondary-bg-color)] text-[var(--tg-text-color)] border border-[var(--tg-border-color)] rounded-lg pl-3 pr-10 py-2 text-sm outline-none focus:border-[var(--tg-link-color)] transition-colors font-mono"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setShowKey(prev => ({ ...prev, [memKeyName]: !prev[memKeyName] }))}
-                            className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--tg-hint-color)]"
-                          >
-                            {showKey[memKeyName] ? <XCircle size={14} /> : <Key size={14} />}
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-        </div>
       </div>
 
       <div className="p-4 bg-[var(--tg-bg-color)] flex-shrink-0">

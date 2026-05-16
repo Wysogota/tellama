@@ -1,5 +1,4 @@
 import db from './DatabaseBridge.js';
-import { generateEmbedding } from '../services/memoryManager.js';
 
 const now = () => Date.now();
 
@@ -395,7 +394,7 @@ export function buildMessageTree(msgRows, branchRows) {
 // ─── Pending Records for Sync ─────────────────────────────────────────────────
 
 export async function getPendingRecords() {
-  const [profiles, personas, sessions, messages, branchState, app_settings, deleted_records, memories_store] = await Promise.all([
+  const [profiles, personas, sessions, messages, branchState, app_settings, deleted_records] = await Promise.all([
     db.query("SELECT *, 'user_profiles' as _table FROM user_profiles WHERE sync_status='pending'"),
     db.query("SELECT *, 'personas' as _table FROM personas WHERE sync_status='pending'"),
     db.query("SELECT *, 'chat_sessions' as _table FROM chat_sessions WHERE sync_status='pending'"),
@@ -403,7 +402,6 @@ export async function getPendingRecords() {
     db.query("SELECT *, 'session_branch_state' as _table FROM session_branch_state WHERE sync_status='pending'"),
     db.query("SELECT *, 'app_settings' as _table FROM app_settings WHERE sync_status='pending'"),
     db.query("SELECT *, 'deleted_records' as _table FROM deleted_records WHERE sync_status='pending'"),
-    db.query("SELECT *, 'memories_store' as _table FROM memories_store WHERE sync_status='pending'"),
   ]);
   return [
     ...profiles.rows,
@@ -413,7 +411,6 @@ export async function getPendingRecords() {
     ...branchState.rows,
     ...app_settings.rows,
     ...deleted_records.rows,
-    ...memories_store.rows,
   ];
 }
 
@@ -474,48 +471,5 @@ export async function applyMessageFromServer(msg) {
   );
 }
 
-export async function applyMemoryFromServer(memory) {
-  if (await isTombstoned(memory.id, 'memories_store')) {
-    console.log(`[queries] applyMemoryFromServer: skipping tombstoned memory ${memory.id}`);
-    return;
-  }
-  
-  // Check if we already have it to avoid regenerating vectors
-  const existing = await db.query('SELECT 1 FROM memories_store WHERE id = ?', [memory.id]);
-  if (existing.rows.length > 0) {
-    // Already exists, just mark synced in case it was pending
-    await db.exec("UPDATE memories_store SET sync_status = 'synced' WHERE id = ?", [memory.id]);
-    return;
-  }
 
-  // It's a new memory from the server. We must generate the local vector embedding.
-  console.log(`[queries] Generating local embedding for pulled memory: ${memory.id}`);
-  let embStr = null;
-  try {
-    const embedding = await generateEmbedding(memory.content);
-    embStr = JSON.stringify(embedding);
-  } catch (e) {
-    console.error(`[queries] Failed to generate embedding for pulled memory ${memory.id}:`, e);
-    // If it fails, we still save the text fact, just without the vector for now.
-    // It won't be searchable but at least it's synced.
-  }
-
-  const queries = [
-    {
-      sql: `INSERT INTO memories_store (id, persona_id, memory_type, content, importance_score, created_at, sync_status)
-            VALUES (?, ?, ?, ?, ?, ?, 'synced')
-            ON CONFLICT(id) DO UPDATE SET sync_status='synced'`,
-      params: [memory.id, memory.persona_id, memory.memory_type || 'long-term', memory.content, memory.importance_score || 0.5, memory.created_at]
-    }
-  ];
-
-  if (embStr) {
-    queries.push({
-      sql: `INSERT INTO vec_memories (id, embedding) VALUES (?, ?)`,
-      params: [memory.id, embStr]
-    });
-  }
-
-  await db.batch(queries);
-}
 

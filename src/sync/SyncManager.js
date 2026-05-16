@@ -211,16 +211,7 @@ export async function syncPull(serverUrl) {
                 data.updated_at
               );
             }
-            if (_table === 'memories_store') {
-              await queries.applyMemoryFromServer({
-                id: data.id,
-                persona_id: data.persona_id,
-                memory_type: data.memory_type,
-                content: data.content,
-                importance_score: data.importance_score,
-                created_at: data.created_at
-              });
-            }
+
           } catch (err) {
             console.error(`[SyncManager] Error applying ${_table} record:`, err.message);
           }

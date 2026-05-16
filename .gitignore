@@ -52,3 +52,5 @@ coverage/
 *.db-journal
 *.db-shm
 *.db-wal
+
+scratch

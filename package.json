@@ -6,23 +6,25 @@
   "scripts": {
     "dev:ui": "vite",
     "dev:server": "nodemon server/index.js",
-    "dev": "concurrently \"npm run dev:ui\" \"npm run dev:server\"",
+    "dev:letta": "bash scripts/letta-start.sh",
+    "dev": "npm run dev:letta && concurrently --names \"UI,SERVER\" --prefix-colors \"cyan,green\" \"npm run dev:ui\" \"npm run dev:server\"",
+    "letta:stop": "docker compose -f letta-server/compose.yaml stop",
+    "letta:update": "bash scripts/update-letta.sh",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview"
   },
   "dependencies": {
     "@sqlite.org/sqlite-wasm": "^3.46.1-build5",
-    "@xenova/transformers": "^2.17.2",
     "better-sqlite3": "^12.9.0",
     "concurrently": "^9.2.1",
     "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "lucide-react": "^1.14.0",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
     "react-easy-crop": "^5.5.7",
-    "sqlite-vec-wasm": "^0.1.0",
     "uuid": "^14.0.0",
     "ws": "^8.20.0"
   },

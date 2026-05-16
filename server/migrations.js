@@ -63,16 +63,7 @@ export function runServerMigrations() {
     )
   `);
 
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS memories_store (
-      id               TEXT PRIMARY KEY,
-      persona_id       TEXT NOT NULL,
-      memory_type      TEXT NOT NULL,
-      content          TEXT NOT NULL,
-      importance_score REAL NOT NULL DEFAULT 0.5,
-      created_at       INTEGER NOT NULL
-    )
-  `);
+
   
   db.exec(`
     CREATE TABLE IF NOT EXISTS app_settings (
@@ -103,14 +94,7 @@ export function runServerMigrations() {
     db.exec(`ALTER TABLE messages ADD COLUMN metadata TEXT DEFAULT '{}'`);
   } catch (e) {}
 
-  try {
-    db.exec(`ALTER TABLE memories_store ADD COLUMN updated_at INTEGER`);
-    db.exec(`UPDATE memories_store SET updated_at = created_at WHERE updated_at IS NULL`);
-  } catch (e) {}
 
-  try {
-    db.exec(`ALTER TABLE memories_store DROP COLUMN embedding_ref`);
-  } catch (e) {}
 
   console.log('[Server Migrations] Database schema initialized');
 }
