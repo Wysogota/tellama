@@ -42,7 +42,7 @@ export const generateChatResponse = async (
     }
 
     // 3. Send message to Letta Agent and stream response
-    const { content, stats } = await sendMessageToAgent(agentId, messageText, onChunk, signal);
+    const { content, stats } = await sendMessageToAgent(agentId, messageText, onChunk, signal, activeUser);
 
     const durationMs = performance.now() - startTime;
     return {

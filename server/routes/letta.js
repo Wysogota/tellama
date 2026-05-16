@@ -10,12 +10,15 @@ const LETTA_PASSWORD = process.env.LETTA_PASSWORD || '';
 
 // Proxy middleware to forward to Letta
 router.use(async (req, res) => {
-  const targetUrl = `${LETTA_URL}${req.path}`;
+  const targetUrl = `${LETTA_URL}${req.url}`;
   const headers = {
     'Content-Type': 'application/json',
   };
   if (LETTA_PASSWORD) {
     headers['Authorization'] = `Bearer ${LETTA_PASSWORD}`;
+  }
+  if (req.headers['x-user-id']) {
+    headers['user_id'] = req.headers['x-user-id'];
   }
 
   try {

@@ -4,9 +4,66 @@ const SERVER_URL = 'http://localhost:3001/letta';
  * Service to interact with the Letta Server via our Node.js Proxy.
  */
 
+// ── User Mapping ──────────────────────────────────────────────────────────────
+let userCache = {}; // activeUser.id -> letta_user_id
+
+const getLettaUserId = async (activeUser) => {
+  if (userCache[activeUser.id]) return userCache[activeUser.id];
+  
+  let allUsers = [];
+  try {
+    let cursor = null;
+    let hasMore = true;
+    while(hasMore) {
+       const url = `${SERVER_URL}/v1/admin/users/?limit=100${cursor ? '&after='+cursor : ''}`;
+       const res = await fetch(url);
+       if (!res.ok) break;
+       const data = await res.json();
+       if (!Array.isArray(data) || data.length === 0) break;
+       allUsers.push(...data);
+       if (data.length < 100) break;
+       cursor = data[data.length - 1].id;
+    }
+  } catch(e) {
+     console.error('[LettaService] Failed to list Letta users', e);
+  }
+
+  // Use activeUser.id as the Letta user name to guarantee uniqueness per profile
+  const existing = allUsers.find(u => u.name === activeUser.id);
+  if (existing) {
+    userCache[activeUser.id] = existing.id;
+    return existing.id;
+  }
+
+  try {
+     const res = await fetch(`${SERVER_URL}/v1/admin/users/`, {
+       method: 'POST',
+       headers: { 'Content-Type': 'application/json' },
+       body: JSON.stringify({ name: activeUser.id, organization_id: 'org-00000000-0000-4000-8000-000000000000' })
+     });
+     if (res.ok) {
+       const newUser = await res.json();
+       userCache[activeUser.id] = newUser.id;
+       return newUser.id;
+     }
+  } catch(e) {
+     console.error('[LettaService] Failed to create Letta user', e);
+  }
+  return null;
+};
+
+const fetchLetta = async (url, options = {}, activeUser = null) => {
+  const headers = { ...options.headers };
+  if (activeUser) {
+    const userId = await getLettaUserId(activeUser);
+    if (userId) {
+      headers['x-user-id'] = userId;
+    }
+  }
+  return fetch(url, { ...options, headers });
+};
+
 // ── System Prompt ─────────────────────────────────────────────────────────────
-// Builds the Telegram-style messenger prompt for a persona.
-// This is the same prompt that was used before Letta was integrated.
 const buildSystemPrompt = (contact, activeUser) => {
   return `You are ${contact.name}, a real person communicating in a Telegram chat.
 Keep your responses natural, concise, and conversational — like a real person texting.
@@ -53,7 +110,7 @@ export const createAgent = async (contact, activeUser, settings) => {
 
   // Return existing agent if already created
   try {
-    const listRes = await fetch(`${SERVER_URL}/v1/agents?name=${agentName}`);
+    const listRes = await fetchLetta(`${SERVER_URL}/v1/agents?name=${agentName}`, {}, activeUser);
     if (listRes.ok) {
       const data = await listRes.json();
       const existingAgent =
@@ -82,11 +139,11 @@ export const createAgent = async (contact, activeUser, settings) => {
     }
   };
 
-  const response = await fetch(`${SERVER_URL}/v1/agents`, {
+  const response = await fetchLetta(`${SERVER_URL}/v1/agents`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
-  });
+  }, activeUser);
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
@@ -99,48 +156,30 @@ export const createAgent = async (contact, activeUser, settings) => {
 
 // ── Agent management utilities ────────────────────────────────────────────────
 
-/**
- * Find all Letta agents for a given persona (contact.id).
- * Returns an array of agent objects (may include deleted ones if the API returns them).
- *
- * Usage: const agents = await findAgentsForPersona(contact.id);
- */
-export const findAgentsForPersona = async (contactId) => {
+export const findAgentsForPersona = async (contactId, activeUser) => {
   const agentName = `persona_${contactId.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
-  const res = await fetch(`${SERVER_URL}/v1/agents?name=${agentName}`);
+  const res = await fetchLetta(`${SERVER_URL}/v1/agents?name=${agentName}`, {}, activeUser);
   if (!res.ok) return [];
   const data = await res.json();
-  return Array.isArray(data) ? data : (data.agents ?? []);
+  const allAgents = Array.isArray(data) ? data : (data.agents ?? []);
+  return allAgents;
 };
 
-/**
- * Hard-delete ALL Letta agents for a given persona (contact.id).
- * Useful when a persona's config changed and you want to force recreation.
- *
- * Usage: await deleteAgentsForPersona(contact.id);
- */
-export const deleteAgentsForPersona = async (contactId) => {
-  const agents = await findAgentsForPersona(contactId);
+export const deleteAgentsForPersona = async (contactId, activeUser) => {
+  const agents = await findAgentsForPersona(contactId, activeUser);
   const results = [];
   for (const agent of agents) {
-    const res = await fetch(`${SERVER_URL}/v1/agents/${agent.id}`, { method: 'DELETE' });
+    const res = await fetchLetta(`${SERVER_URL}/v1/agents/${agent.id}`, { method: 'DELETE' }, activeUser);
     results.push({ id: agent.id, ok: res.ok, status: res.status });
     console.log(`[LettaService] Deleted agent ${agent.id} for persona ${contactId}:`, res.status);
   }
   return results;
 };
 
-/**
- * Reset a persona's Letta agent: delete existing agents and recreate
- * with the current system prompt and memory blocks.
- *
- * Usage: const newAgentId = await resetAgentForPersona(contact, activeUser, settings);
- */
 export const resetAgentForPersona = async (contact, activeUser, settings) => {
-  console.log(`[LettaService] Resetting agent for persona: ${contact.name} (${contact.id})`);
-  await deleteAgentsForPersona(contact.id);
+  console.log(`[LettaService] Resetting agent for persona: ${contact.name} (${contact.id}) user: ${activeUser.name}`);
+  await deleteAgentsForPersona(contact.id, activeUser);
 
-  // Force recreation by temporarily using a unique name, then rename via full create
   const agentName = `persona_${contact.id.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
   const payload = {
     name: agentName,
@@ -156,24 +195,20 @@ export const resetAgentForPersona = async (contact, activeUser, settings) => {
       embedding_dim: 1536
     }
   };
-  const res = await fetch(`${SERVER_URL}/v1/agents`, {
+  const res = await fetchLetta(`${SERVER_URL}/v1/agents`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
-  });
+  }, activeUser);
   if (!res.ok) throw new Error(`Failed to recreate agent: ${res.status}`);
   const agent = await res.json();
   console.log(`[LettaService] Recreated agent ${agent.id} for persona ${contact.name}`);
   return agent.id;
 };
 
-/**
- * Reset ALL persona agents currently in Letta.
- * Useful when you change the system prompt globally and want all personas to pick it up.
- *
- * Usage: await resetAllPersonaAgents();  (call from devtools console)
- */
 export const resetAllPersonaAgents = async () => {
+  // Resetting all agents requires looping through all users if they're scoped, 
+  // but since we only have the default fetch here, this will only reset default_user's agents.
   const res = await fetch(`${SERVER_URL}/v1/agents`);
   if (!res.ok) return;
   const data = await res.json();
@@ -187,16 +222,15 @@ export const resetAllPersonaAgents = async () => {
   console.log('[LettaService] Done. Agents will be recreated on next message.');
 };
 
-
-export const sendMessageToAgent = async (agentId, messageText, onChunk, signal) => {
-  const response = await fetch(`${SERVER_URL}/v1/agents/${agentId}/messages/stream`, {
+export const sendMessageToAgent = async (agentId, messageText, onChunk, signal, activeUser) => {
+  const response = await fetchLetta(`${SERVER_URL}/v1/agents/${agentId}/messages/stream`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       messages: [{ role: 'user', content: messageText }]
     }),
     signal
-  });
+  }, activeUser);
 
   if (!response.ok) {
     throw new Error(`Letta API error: ${response.status}`);
@@ -214,7 +248,6 @@ export const sendMessageToAgent = async (agentId, messageText, onChunk, signal) 
 
     const chunk = decoder.decode(value, { stream: true });
 
-    // Split by double newline to get full SSE events
     const events = chunk.split('\n\n');
     for (const eventStr of events) {
       if (!eventStr.trim()) continue;
@@ -246,7 +279,6 @@ export const sendMessageToAgent = async (agentId, messageText, onChunk, signal) 
         }
       } catch (e) {
         if (e.message.startsWith('Letta Agent Error')) throw e;
-        // ignore JSON parse errors on non-data lines
       }
     }
   }
