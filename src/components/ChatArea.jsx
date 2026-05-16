@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { Paperclip, SendHorizontal, MoreVertical, Loader2, Edit2, Trash2, RotateCcw, ChevronLeft, ChevronRight, ArrowLeft, CheckCheck, Check, Smile, Mic, Search, X, Calendar, FileText, Image as ImageIcon, XCircle, FileCode, FileType, File, Download, Maximize2, Reply, Copy, Languages, Pin, Forward, CheckCircle2 } from 'lucide-react';
 import { generateChatResponse } from '../services/api';
+import EmojiPicker, { Theme } from 'emoji-picker-react';
 
 const ChatArea = ({ onOpenModelInfo }) => {
   const { personas, chatSessions, activeChatId, setActiveChatId, messages, addMessage, updateMessage, setFullMessageContent, deleteMessageNode, switchBranch, settings, userProfiles, activeUserProfileId, deleteChat, renameChat, getNewAbortSignal, clearGeneration, streamingMessages, updateMessageMetadata } = useAppContext();
@@ -20,11 +21,13 @@ const ChatArea = ({ onOpenModelInfo }) => {
   const [isRenaming, setIsRenaming] = useState(false);
   const [tempChatName, setTempChatName] = useState('');
   const [contextMenu, setContextMenu] = useState(null); // { x, y, msg }
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
   const menuRef = useRef(null);
   const searchContainerRef = useRef(null);
+  const emojiPickerRef = useRef(null);
 
   const activeChat = chatSessions.find(s => s.id === activeChatId);
   const activePersona = activeChat ? personas.find(p => p.id === activeChat.persona_id) : null;
@@ -72,6 +75,9 @@ const ChatArea = ({ onOpenModelInfo }) => {
       }
       if (contextMenu) {
         setContextMenu(null);
+      }
+      if (emojiPickerRef.current && !emojiPickerRef.current.contains(event.target)) {
+        setShowEmojiPicker(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -254,6 +260,10 @@ const ChatArea = ({ onOpenModelInfo }) => {
       e.preventDefault();
       handleSendRobust();
     }
+  };
+
+  const onEmojiClick = (emojiData) => {
+    setInputText(prev => prev + emojiData.emoji);
   };
 
   const handleFileAttach = (e) => {
@@ -723,10 +733,48 @@ const ChatArea = ({ onOpenModelInfo }) => {
       <div className="pt-0.5 px-2 pb-1 md:pt-1 md:px-4 md:pb-3 z-10 flex flex-col items-center bg-transparent">
         <div className="w-full max-w-[720px] flex items-end gap-2 relative">
           <input type="file" ref={fileInputRef} onChange={handleFileAttach} className="hidden" multiple />
-          <div className="flex-grow flex flex-col bg-[var(--tg-secondary-bg-color)] shadow-md overflow-hidden rounded-[24px]">
+          <div className="flex-grow flex flex-col bg-[var(--tg-secondary-bg-color)] shadow-md rounded-[24px] relative" ref={emojiPickerRef}>
+            {showEmojiPicker && (
+              <div className="absolute bottom-[calc(100%+8px)] left-0 w-[calc(50%+40px)] z-[100] animate-in slide-in-from-bottom-2 fade-in duration-200">
+                <div className="overflow-hidden rounded-[20px] shadow-2xl backdrop-blur-xl bg-[var(--tg-secondary-bg-color)]/95">
+                  <EmojiPicker 
+                    onEmojiClick={onEmojiClick} 
+                    theme={settings.theme === 'dark' ? Theme.DARK : Theme.LIGHT}
+                    emojiStyle="apple"
+                    skinTonesDisabled
+                    searchDisabled={false}
+                    width="100%"
+                    height={400}
+                    lazyLoadEmojis={true}
+                    previewConfig={{ showPreview: false }}
+                    searchPlaceholder="Search emojis..."
+                  />
+                </div>
+              </div>
+            )}
             <div className={`overflow-hidden transition-all duration-300 ease-in-out ${attachments.length > 0 ? 'max-h-[90px] opacity-100' : 'max-h-0 opacity-0'}`}><div className="flex overflow-x-auto px-2 gap-2 custom-scrollbar pt-2 pb-2">{attachments.map(att => (<div key={att.id} className="flex-shrink-0 relative group"><div onClick={() => setPreviewFile(att)} className="cursor-pointer">{att.previewUrl ? <div className="w-14 h-14 rounded-xl overflow-hidden shadow-sm"><img src={att.previewUrl} className="w-full h-full object-cover" /></div> : <div className="w-14 h-14 rounded-xl bg-[var(--tg-bg-color)] shadow-sm flex flex-col items-center justify-center p-1 text-center">{getFileIcon(att)}<span className="text-[8px] truncate w-full">{att.name}</span></div>}</div><button onClick={(e) => { e.stopPropagation(); removeAttachment(att.id); }} className="absolute -top-1 -right-1 bg-[var(--tg-bg-color)] text-red-500 rounded-full shadow-md w-5 h-5 flex items-center justify-center border opacity-0 group-hover:opacity-100 transition-opacity"><X size={12} /></button></div>))}</div></div>
             {attachments.length > 0 && <div className="mx-8 h-[1px] bg-[var(--tg-border-color)] opacity-40" />}
-            <div className="flex items-end px-2 py-0.5 min-h-[44px]"><button className="p-2 text-[var(--tg-hint-color)] hover:text-[var(--tg-link-color)] transition-colors"><Smile size={24} /></button><textarea className="w-full bg-transparent text-[var(--tg-text-color)] py-2.5 px-1 outline-none resize-none max-h-32 text-[16px] leading-tight custom-scrollbar" placeholder="Message" rows={1} value={inputText} onChange={(e) => { setInputText(e.target.value); e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 128) + 'px'; }} onKeyDown={handleKeyDown} /><button onClick={() => fileInputRef.current?.click()} className="p-2 text-[var(--tg-hint-color)] hover:text-[var(--tg-link-color)] transition-colors"><Paperclip size={24} /></button></div>
+            <div className="flex items-end px-2 py-0.5 min-h-[44px]">
+              <div>
+                <button 
+                  onClick={(e) => { e.stopPropagation(); setShowEmojiPicker(!showEmojiPicker); }}
+                  className={`p-2 transition-colors ${showEmojiPicker ? 'text-[var(--tg-link-color)]' : 'text-[var(--tg-hint-color)] hover:text-[var(--tg-link-color)]'}`}
+                >
+                  <Smile size={24} />
+                </button>
+              </div>
+              <textarea 
+                className="w-full bg-transparent text-[var(--tg-text-color)] py-2.5 px-1 outline-none resize-none max-h-32 text-[16px] leading-tight custom-scrollbar" 
+                placeholder="Message" 
+                rows={1} 
+                value={inputText} 
+                onChange={(e) => { setInputText(e.target.value); e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 128) + 'px'; }} 
+                onKeyDown={handleKeyDown} 
+              />
+              <button onClick={() => fileInputRef.current?.click()} className="p-2 text-[var(--tg-hint-color)] hover:text-[var(--tg-link-color)] transition-colors">
+                <Paperclip size={24} />
+              </button>
+            </div>
           </div>
           <button onClick={handleSendRobust} className="w-[44px] h-[44px] bg-gradient-to-br from-[var(--tg-link-color)] to-purple-600 text-white rounded-full flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 transition-all flex-shrink-0 mb-0.5">{inputText.trim() || attachments.length > 0 ? <SendHorizontal size={20} fill="currentColor" className="ml-0.5" /> : <Mic size={20} />}</button>
         </div>
