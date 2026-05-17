@@ -20,6 +20,12 @@ const PROVIDER_CONFIGS = {
       'Accept': 'text/event-stream',
     },
   },
+  mistral: {
+    baseUrl: 'https://api.mistral.ai/v1',
+    extraHeaders: {
+      'Accept': 'text/event-stream',
+    },
+  },
   llamacpp: {
     baseUrl: 'http://127.0.0.1:8080/v1',
     extraHeaders: {},
@@ -130,7 +136,7 @@ router.post('/proxy/:provider/chat/completions', async (req, res) => {
 
   const config = PROVIDER_CONFIGS[baseProvider];
   if (!config) {
-    return res.status(400).json({ error: `Unknown provider "${baseProvider}". Use llamacpp, openrouter, or nvidia.` });
+    return res.status(400).json({ error: `Unknown provider "${baseProvider}". Use llamacpp, openrouter, nvidia, or mistral.` });
   }
 
   // Read key — if missing, tell the user clearly
@@ -161,6 +167,36 @@ router.post('/proxy/:provider/chat/completions', async (req, res) => {
     const upstreamUrl = `${config.baseUrl}/chat/completions`;
     console.log(`[LLM Proxy] → ${baseProvider} ${upstreamUrl} model=${realModel}`);
 
+    // Mistral (and some other providers) strictly forbid extra fields in message objects.
+    // Letta can inject `reasoning_content` and other non-standard fields into assistant
+    // messages when using thinking/chain-of-thought models. Strip them here.
+    const STRICT_PROVIDERS = new Set(['mistral']);
+    const ALLOWED_MSG_FIELDS = { role: 1, content: 1, name: 1, tool_calls: 1, tool_call_id: 1 };
+    const sanitizedMessages = STRICT_PROVIDERS.has(baseProvider)
+      ? messages.map(msg => {
+          const clean = {};
+          
+          // Merge reasoning_content into content to prevent context loss
+          if (msg.reasoning_content) {
+            const extra = `<think>\n${msg.reasoning_content}\n</think>\n\n`;
+            clean.content = msg.content ? (extra + msg.content) : extra;
+          }
+
+          for (const k of Object.keys(msg)) {
+            if (ALLOWED_MSG_FIELDS[k]) {
+              if (k === 'content' && clean.content) {
+                // If we already merged reasoning_content, don't overwrite it directly,
+                // but we already handled msg.content above, so skip it unless it's empty
+                if (!msg.reasoning_content) clean.content = msg.content;
+              } else {
+                clean[k] = msg[k];
+              }
+            }
+          }
+          return clean;
+        })
+      : messages;
+
     const upstream = await fetch(upstreamUrl, {
       method: 'POST',
       headers: {
@@ -170,7 +206,7 @@ router.post('/proxy/:provider/chat/completions', async (req, res) => {
       },
       body: JSON.stringify({
         model: realModel || undefined,
-        messages,
+        messages: sanitizedMessages,
         stream: req.body.stream ?? false,
         temperature: req.body.temperature ?? ACTIVE_PARAMS.temperature,
         top_p: req.body.top_p ?? ACTIVE_PARAMS.top_p,
@@ -359,6 +395,41 @@ router.get('/models/:provider', async (req, res) => {
           link: `https://build.nvidia.com/${m.id}/modelcard`,
           context_length: m.context_length || null,
           defaultParams: getModelDefaults(m.id, m.context_length),
+        }));
+
+      mapped.sort((a, b) => {
+        if (a.isFavorite && !b.isFavorite) return -1;
+        if (!a.isFavorite && b.isFavorite) return 1;
+        return a.name.localeCompare(b.name);
+      });
+      res.json(mapped);
+    } else if (provider === 'mistral') {
+      // Mistral requires an API key to list models
+      const keyRow = db.prepare('SELECT key_value FROM api_keys WHERE provider = ?').get('mistral');
+      if (!keyRow) {
+        return res.status(401).json({ error: 'Mistral API key not configured. Add it in Settings first.' });
+      }
+      const resp = await fetch('https://api.mistral.ai/v1/models', {
+        headers: { 'Authorization': `Bearer ${keyRow.key_value}` },
+      });
+      const data = await resp.json();
+
+      const seenIds = new Set();
+      const mapped = (data.data || [])
+        .filter(m => {
+          if (seenIds.has(m.id)) return false;
+          seenIds.add(m.id);
+          // Only include text-generation / chat models
+          return m.capabilities?.completion_chat === true || !m.capabilities;
+        })
+        .map(m => ({
+          id: m.id,
+          name: m.name || formatModelName(m.id),
+          isFree: false,
+          isFavorite: isFav(m.id),
+          link: `https://docs.mistral.ai/getting-started/models/`,
+          context_length: m.max_context_window || null,
+          defaultParams: getModelDefaults(m.id, m.max_context_window),
         }));
 
       mapped.sort((a, b) => {

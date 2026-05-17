@@ -31,12 +31,20 @@ const PROVIDERS = [
     Icon: Cpu,
     iconUrl: `${SERVER_URL}/llm/icon?domain=nvidia.com&sz=128`
   },
+  {
+    id: 'mistral',
+    label: 'Mistral AI',
+    desc: 'Cloud',
+    Icon: Globe,
+    iconUrl: `${SERVER_URL}/llm/icon?domain=mistral.ai&sz=128`
+  },
 ];
 
 const MODEL_PLACEHOLDERS = {
   llamacpp: 'e.g. mistral-7b',
   openrouter: 'e.g. openai/gpt-4o',
   nvidia: 'e.g. meta/llama-3.1',
+  mistral: 'e.g. mistral-large-latest',
 };
 
 // Per-model recommended params based on model family (mirrors server getModelDefaults)
@@ -71,10 +79,10 @@ const getModelFamilyDefaults = (modelId) => {
 
 // Param definitions for the UI with Icons
 const LLM_PARAMS = [
-  { key: 'temperature', label: 'Temperature', icon: Zap, min: 0, max: 2, step: 0.05, decimals: 2, providers: ['llamacpp', 'openrouter', 'nvidia'], tip: 'Creativity / randomness. Lower = more focused, higher = more varied.' },
-  { key: 'top_p', label: 'Top-P', icon: Layers, min: 0, max: 1, step: 0.01, decimals: 2, providers: ['llamacpp', 'openrouter', 'nvidia'], tip: 'Nucleus sampling: limits token pool to top-p probability mass.' },
+  { key: 'temperature', label: 'Temperature', icon: Zap, min: 0, max: 2, step: 0.05, decimals: 2, providers: ['llamacpp', 'openrouter', 'nvidia', 'mistral'], tip: 'Creativity / randomness. Lower = more focused, higher = more varied.' },
+  { key: 'top_p', label: 'Top-P', icon: Layers, min: 0, max: 1, step: 0.01, decimals: 2, providers: ['llamacpp', 'openrouter', 'nvidia', 'mistral'], tip: 'Nucleus sampling: limits token pool to top-p probability mass.' },
   { key: 'top_k', label: 'Top-K', icon: Activity, min: 1, max: 200, step: 1, decimals: 0, providers: ['llamacpp'], tip: 'Limits token choices to K most probable tokens (local models only).' },
-  { key: 'max_tokens', label: 'Max Tokens', icon: Maximize2, min: 64, max: 8192, step: 64, decimals: 0, providers: ['llamacpp', 'openrouter', 'nvidia'], tip: 'Maximum number of tokens the model can generate per reply.' },
+  { key: 'max_tokens', label: 'Max Tokens', icon: Maximize2, min: 64, max: 8192, step: 64, decimals: 0, providers: ['llamacpp', 'openrouter', 'nvidia', 'mistral'], tip: 'Maximum number of tokens the model can generate per reply.' },
   { key: 'repeat_penalty', label: 'Repeat Penalty', icon: Layers, min: 1, max: 2, step: 0.05, decimals: 2, providers: ['llamacpp'], tip: 'Penalises repeating tokens. Higher = less repetition (local models only).' },
 ];
 
@@ -89,7 +97,7 @@ const getModelBrandIcon = (modelId) => {
   if (id.includes('google')) return getUrl('google.com');
   if (id.includes('meta') || id.includes('llama')) return getUrl('meta.com');
   if (id.includes('anthropic')) return getUrl('anthropic.com');
-  if (id.includes('mistral')) return getUrl('mistral.ai');
+  if (id.includes('mistral') || id.includes('codestral') || id.includes('pixtral')) return getUrl('mistral.ai');
   if (id.includes('cohere')) return getUrl('cohere.com');
   if (id.includes('microsoft')) return getUrl('microsoft.com');
   if (id.includes('nvidia')) return getUrl('nvidia.com');
@@ -104,11 +112,11 @@ const SettingsPanel = ({ onBack }) => {
   // Stores the defaultParams of the currently selected model for "Reset to defaults"
   const [currentModelDefaults, setCurrentModelDefaults] = useState(null);
 
-  const [keyInputs, setKeyInputs] = useState({ openrouter: '', nvidia: '' });
-  const [keyStatus, setKeyStatus] = useState({ openrouter: false, nvidia: false });
+  const [keyInputs, setKeyInputs] = useState({ openrouter: '', nvidia: '', mistral: '' });
+  const [keyStatus, setKeyStatus] = useState({ openrouter: false, nvidia: false, mistral: false });
   const [keyLoading, setKeyLoading] = useState(true);
   const [saveStatus, setSaveStatus] = useState({}); // provider -> status
-  const [showKey, setShowKey] = useState({ openrouter: false, nvidia: false });
+  const [showKey, setShowKey] = useState({ openrouter: false, nvidia: false, mistral: false });
   const [expandedSection, setExpandedSection] = useState('appearance');
 
   const [modelsList, setModelsList] = useState([]);
@@ -144,8 +152,9 @@ const SettingsPanel = ({ onBack }) => {
     Promise.all([
       fetch(`${SERVER_URL}/llm/key-status?provider=openrouter`).then(r => r.json()).catch(() => ({ configured: false })),
       fetch(`${SERVER_URL}/llm/key-status?provider=nvidia`).then(r => r.json()).catch(() => ({ configured: false })),
-    ]).then(([or, nv]) => {
-      setKeyStatus({ openrouter: or.configured, nvidia: nv.configured });
+      fetch(`${SERVER_URL}/llm/key-status?provider=mistral`).then(r => r.json()).catch(() => ({ configured: false })),
+    ]).then(([or, nv, ms]) => {
+      setKeyStatus({ openrouter: or.configured, nvidia: nv.configured, mistral: ms.configured });
       setKeyLoading(false);
     });
   }, []);
@@ -159,7 +168,7 @@ const SettingsPanel = ({ onBack }) => {
       setLocalSettings(prev => ({ ...prev, modelName: providerModel }));
     }
 
-    if (provider === 'openrouter' || provider === 'nvidia') {
+    if (provider === 'openrouter' || provider === 'nvidia' || provider === 'mistral') {
       setModelsLoading(true);
       fetch(`${SERVER_URL}/llm/models/${provider}`)
         .then(res => res.json())
@@ -191,7 +200,7 @@ const SettingsPanel = ({ onBack }) => {
   useEffect(() => {
     const timer = setTimeout(() => {
       const changed = {};
-      const keysToSync = ['modelName', 'host', 'bgIntensity', 'accentColor', 'provider', 'freeModelsOnly', 'model_llamacpp', 'model_openrouter', 'model_nvidia',
+      const keysToSync = ['modelName', 'host', 'bgIntensity', 'accentColor', 'provider', 'freeModelsOnly', 'model_llamacpp', 'model_openrouter', 'model_nvidia', 'model_mistral',
         'temperature', 'top_p', 'top_k', 'max_tokens', 'repeat_penalty'];
 
       keysToSync.forEach(key => {
@@ -276,7 +285,7 @@ const SettingsPanel = ({ onBack }) => {
   };
 
   const currentProvider = localSettings.provider || 'llamacpp';
-  const needsApiKey = currentProvider === 'openrouter' || currentProvider === 'nvidia';
+  const needsApiKey = currentProvider === 'openrouter' || currentProvider === 'nvidia' || currentProvider === 'mistral';
 
 
 
@@ -405,7 +414,7 @@ const SettingsPanel = ({ onBack }) => {
 
           {expandedSection === 'provider' && (
             <div className="px-5 pb-6 pt-2 space-y-4 animate-in slide-in-from-top-2 duration-200">
-              <div className="grid grid-cols-3 gap-2 mt-2">
+              <div className="grid grid-cols-2 gap-2 mt-2">
                 {PROVIDERS.map(({ id, label, Icon, iconUrl }) => {
                   const selected = currentProvider === id;
                   return (
@@ -690,6 +699,8 @@ const SettingsPanel = ({ onBack }) => {
                       <p className="text-[10px] text-[var(--tg-hint-color)] mt-1 opacity-60">
                         {currentProvider === 'openrouter'
                           ? 'Your key is stored locally and never leaves your browser/server.'
+                          : currentProvider === 'mistral'
+                          ? 'Get your API key from console.mistral.ai. Models will load after saving.'
                           : 'Get your API key from the NVIDIA NIM dashboard.'}
                       </p>
                     )}
