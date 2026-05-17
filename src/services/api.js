@@ -7,7 +7,7 @@ export const generateChatResponse = async (
 
   try {
     // 0. Update proxy's active provider + inference parameters
-    await fetch('http://localhost:3001/llm/active-provider', {
+    await fetch(`/api/llm/active-provider`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

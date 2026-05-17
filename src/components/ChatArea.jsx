@@ -66,6 +66,43 @@ const ChatArea = ({ onOpenModelInfo }) => {
   }, [activeMessages.length, isGenerating]);
 
   useEffect(() => {
+    const handlePopState = (event) => {
+      // Close local UI elements in priority order
+      if (previewFile) {
+        setPreviewFile(null);
+      } else if (showEmojiPicker) {
+        setShowEmojiPicker(false);
+      } else if (isSearchActive) {
+        setIsSearchActive(false);
+        setChatSearchQuery('');
+      } else if (isMenuOpen) {
+        setIsMenuOpen(false);
+      } else if (contextMenu) {
+        setContextMenu(null);
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [previewFile, showEmojiPicker, isSearchActive, isMenuOpen, contextMenu]);
+
+  // Track previous local states
+  const prevLocalStates = useRef({ previewFile, showEmojiPicker, isSearchActive, isMenuOpen, contextMenu });
+
+  // Push history state when local UI elements open
+  useEffect(() => {
+    const openedPreview = previewFile && !prevLocalStates.current.previewFile;
+    const openedEmoji = showEmojiPicker && !prevLocalStates.current.showEmojiPicker;
+    const openedSearch = isSearchActive && !prevLocalStates.current.isSearchActive;
+    const openedMenu = isMenuOpen && !prevLocalStates.current.isMenuOpen;
+    const openedContext = contextMenu && !prevLocalStates.current.contextMenu;
+
+    if (openedPreview || openedEmoji || openedSearch || openedMenu || openedContext) {
+      window.history.pushState({ isChatInternalModal: true }, '');
+    }
+    prevLocalStates.current = { previewFile, showEmojiPicker, isSearchActive, isMenuOpen, contextMenu };
+  }, [previewFile, showEmojiPicker, isSearchActive, isMenuOpen, contextMenu]);
+
+  useEffect(() => {
     const handleClickOutside = (event) => {
       if (menuRef.current && !menuRef.current.contains(event.target)) {
         setIsMenuOpen(false);
@@ -607,7 +644,18 @@ const ChatArea = ({ onOpenModelInfo }) => {
       
       {/* Header */}
       <div className="h-[60px] flex-shrink-0 bg-[var(--tg-bg-color)] flex items-center px-2 md:px-4 z-30 relative md:border-l md:border-r border-[var(--tg-border-color)]">
-        <button onClick={() => setActiveChatId(null)} className="md:hidden p-2 mr-1 text-[var(--tg-hint-color)] hover:bg-[var(--tg-secondary-bg-color)] rounded-full transition-colors flex-shrink-0"><ArrowLeft size={24} /></button>
+        <button 
+          onClick={() => {
+            if (window.history.state?.isTellamaModal || window.history.state?.isChatInternalModal) {
+              window.history.back();
+            } else {
+              setActiveChatId(null);
+            }
+          }} 
+          className="md:hidden p-2 mr-1 text-[var(--tg-hint-color)] hover:bg-[var(--tg-secondary-bg-color)] rounded-full transition-colors flex-shrink-0"
+        >
+          <ArrowLeft size={24} />
+        </button>
         <div className="flex-grow flex items-center cursor-pointer overflow-hidden p-1 rounded-lg min-w-0" onClick={onOpenModelInfo}>
           <div className="w-10 h-10 rounded-full overflow-hidden bg-gradient-to-br from-blue-400 to-blue-600 flex-shrink-0 flex items-center justify-center text-white font-semibold text-lg mr-3 shadow-sm">
             {activePersona.avatar ? <img src={activePersona.avatar} className="w-full h-full object-cover" /> : activePersona.name.charAt(0).toUpperCase()}

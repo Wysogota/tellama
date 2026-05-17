@@ -54,6 +54,6 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: Date.now(), clients: wss.clients.size });
 });
 
-httpServer.listen(PORT, () => {
-  console.log(`[Tellama Server] Running at http://localhost:${PORT}`);
+httpServer.listen(PORT, '0.0.0.0', () => {
+  console.log(`[Tellama Server] Running and accessible on port ${PORT}`);
 });

@@ -16,7 +16,14 @@ let _wsOnInvalidate = null; // called immediately on 'invalidate' from server
 function connectWebSocket() {
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
 
-  const wsUrl = _wsServerUrl.replace(/^http/, 'ws');
+  // Derive WebSocket URL from window.location so it works with any protocol (ws:// or wss://)
+  const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsBase = `${wsProtocol}//${window.location.host}`;
+  // If _wsServerUrl is relative (e.g. '/api'), append it; otherwise use it directly
+  const wsPath = _wsServerUrl.startsWith('http') 
+    ? _wsServerUrl.replace(/^http/, 'ws')
+    : `${wsBase}${_wsServerUrl}`;
+  const wsUrl = wsPath;
   ws = new WebSocket(wsUrl);
 
   ws.onopen = () => {

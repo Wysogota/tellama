@@ -21,7 +21,13 @@ const ContactsPanel = ({ onBack, onEditPersona }) => {
       {/* Header with Integrated Search (Synchronized with Sidebar style) */}
       <div className="flex items-center px-2 h-[60px] bg-[var(--tg-bg-color)] flex-shrink-0 gap-1">
         <button 
-          onClick={onBack}
+          onClick={() => {
+            if (window.history.state?.isSidebarInternal) {
+              window.history.back();
+            } else {
+              onBack();
+            }
+          }}
           className="p-2 text-[var(--tg-hint-color)] hover:bg-[var(--tg-sidebar-hover)] rounded-full transition-colors flex-shrink-0"
         >
           <ArrowLeft size={24} />

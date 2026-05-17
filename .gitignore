@@ -54,4 +54,4 @@ coverage/
 *.db-wal
 
 scratch
-letta-server/.persist/
+letta-server/

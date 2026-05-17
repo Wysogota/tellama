@@ -7,7 +7,7 @@ import {
   Search, X, Eye, EyeOff, RotateCcw, Zap, Layers, Maximize2, Activity, Info
 } from 'lucide-react';
 
-const SERVER_URL = 'http://localhost:3001';
+const SERVER_URL = '/api';
 
 const PROVIDERS = [
   {
@@ -277,7 +277,13 @@ const SettingsPanel = ({ onBack }) => {
       {/* Header */}
       <div className="flex items-center px-4 h-[60px] bg-[var(--tg-bg-color)] flex-shrink-0">
         <button
-          onClick={onBack}
+          onClick={() => {
+            if (window.history.state?.isSidebarInternal) {
+              window.history.back();
+            } else {
+              onBack();
+            }
+          }}
           className="p-2 mr-4 text-[var(--tg-hint-color)] hover:bg-[var(--tg-sidebar-hover)] rounded-full transition-colors"
         >
           <ArrowLeft size={24} />
@@ -606,7 +612,7 @@ const SettingsPanel = ({ onBack }) => {
                       type="text"
                       value={localSettings.host || ''}
                       onChange={(e) => setLocalSettings({ ...localSettings, host: e.target.value })}
-                      placeholder="http://localhost:8080"
+                      placeholder={`http://${window.location.hostname}:8080`}
                       className="w-full bg-[var(--tg-secondary-bg-color)] text-[var(--tg-text-color)] border border-[var(--tg-border-color)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--tg-link-color)] transition-colors"
                     />
                   </div>

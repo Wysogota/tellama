@@ -6,7 +6,7 @@ import * as queries from '../db/queries.js';
 import * as sync from '../sync/SyncManager.js';
 
 
-const SERVER_URL = 'http://localhost:3001';
+const SERVER_URL = '/api';
 
 const ACCENT_COLORS = {
   blue: { light: '#5288c1', dark: '#7695ff' },
@@ -28,7 +28,7 @@ export const AppProvider = ({ children }) => {
   const [messages, setMessages] = useState({});
   const [settings, setSettings] = useState(() => {
     const defaultSettings = { 
-      host: 'http://localhost:8080',
+      host: `http://${window.location.hostname}:8080`,
       provider: 'llamacpp',   // 'llamacpp' | 'openrouter' | 'nvidia'
       modelName: '',          // model name / ID for any provider
       theme: 'light', 
@@ -300,11 +300,31 @@ export const AppProvider = ({ children }) => {
     localStorage.setItem('tellama_settings', JSON.stringify(settings));
     
     // Theme
-    if (settings.theme === 'dark') {
+    const isDark = settings.theme === 'dark';
+    if (isDark) {
       document.documentElement.classList.add('dark');
     } else {
       document.documentElement.classList.remove('dark');
     }
+
+    // Update Meta Theme Color for mobile status bar
+    let metaThemeColor = document.querySelector('meta[name="theme-color"]');
+    if (!metaThemeColor) {
+      metaThemeColor = document.createElement('meta');
+      metaThemeColor.name = 'theme-color';
+      document.head.appendChild(metaThemeColor);
+    }
+    const themeColorValue = isDark ? '#1c1c1c' : '#ffffff';
+    metaThemeColor.setAttribute('content', themeColorValue);
+
+    // iOS status bar style
+    let metaAppleStatus = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
+    if (!metaAppleStatus) {
+      metaAppleStatus = document.createElement('meta');
+      metaAppleStatus.name = 'apple-mobile-web-app-status-bar-style';
+      document.head.appendChild(metaAppleStatus);
+    }
+    metaAppleStatus.setAttribute('content', isDark ? 'black-translucent' : 'default');
 
     // Accent Color
     const colors = ACCENT_COLORS[settings.accentColor] || ACCENT_COLORS.blue;
@@ -702,7 +722,7 @@ export const AppProvider = ({ children }) => {
 
   if (isLoading) {
     return (
-      <div className="h-screen w-screen flex items-center justify-center bg-[var(--tg-bg-color)] text-[var(--tg-text-color)]">
+      <div className="h-dvh w-screen flex items-center justify-center bg-[var(--tg-bg-color)] text-[var(--tg-text-color)]">
         <div className="flex flex-col items-center">
           <div className="w-12 h-12 border-4 border-[var(--tg-link-color)] border-t-transparent rounded-full animate-spin mb-4"></div>
           <p className="text-lg font-medium">Initializing Database...</p>

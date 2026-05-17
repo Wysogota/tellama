@@ -17,6 +17,30 @@ const Sidebar = ({ onEditPersona, onOpenUserProfile }) => {
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const menuRef = React.useRef(null);
 
+  // History / PopState for Sidebar
+  React.useEffect(() => {
+    const handlePopState = () => {
+      if (isMenuOpen) {
+        setIsMenuOpen(false);
+      } else if (view !== 'chats') {
+        setView('chats');
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [isMenuOpen, view]);
+
+  const prevLocalStates = React.useRef({ isMenuOpen, view });
+  React.useEffect(() => {
+    const openedMenu = isMenuOpen && !prevLocalStates.current.isMenuOpen;
+    const switchedView = view !== 'chats' && prevLocalStates.current.view === 'chats';
+
+    if (openedMenu || switchedView) {
+      window.history.pushState({ isSidebarInternal: true }, '');
+    }
+    prevLocalStates.current = { isMenuOpen, view };
+  }, [isMenuOpen, view]);
+
   React.useEffect(() => {
     const handleClickOutside = (event) => {
       if (menuRef.current && !menuRef.current.contains(event.target)) {

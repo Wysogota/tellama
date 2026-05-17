@@ -11,7 +11,43 @@ const MainApp = () => {
   const [showUserProfile, setShowUserProfile] = useState(false);
   const [editingPersonaId, setEditingPersonaId] = useState(null);
   
-  const { activeChatId, chatSessions, settings } = useAppContext();
+  const { activeChatId, setActiveChatId, chatSessions, settings } = useAppContext();
+
+  // History API synchronization for Android back button / Browser back
+  React.useEffect(() => {
+    const handlePopState = (event) => {
+      // If user pressed back, close any open UI elements
+      if (showUserProfile) {
+        setShowUserProfile(false);
+      } else if (showPersonaForm) {
+        setShowPersonaForm(false);
+        setEditingPersonaId(null);
+      } else if (activeChatId) {
+        setActiveChatId(null);
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [showUserProfile, showPersonaForm, activeChatId, setActiveChatId]);
+
+  // Track previous states to detect "opening" actions
+  const prevStates = React.useRef({ showUserProfile, showPersonaForm, activeChatId });
+
+  // When opening a modal or chat, push to history
+  React.useEffect(() => {
+    const openedUserProfile = showUserProfile && !prevStates.current.showUserProfile;
+    const openedPersonaForm = showPersonaForm && !prevStates.current.showPersonaForm;
+    const openedChat = activeChatId && !prevStates.current.activeChatId;
+
+    if (openedUserProfile || openedPersonaForm || openedChat) {
+      window.history.pushState({ 
+        isTellamaModal: true,
+        type: openedUserProfile ? 'profile' : openedPersonaForm ? 'persona' : 'chat'
+      }, '');
+    }
+    prevStates.current = { showUserProfile, showPersonaForm, activeChatId };
+  }, [showUserProfile, showPersonaForm, activeChatId]);
 
   const handleOpenModelInfo = () => {
     if (activeChatId) {
@@ -38,7 +74,7 @@ const MainApp = () => {
   }, [activeChatId, showPersonaForm, chatSessions, editingPersonaId]);
 
   return (
-    <div className="h-screen w-full flex bg-[var(--tg-bg-color)] text-[var(--tg-text-color)] overflow-hidden font-sans">
+    <div className="h-dvh w-full flex bg-[var(--tg-bg-color)] text-[var(--tg-text-color)] overflow-hidden font-sans">
       <AutoInitiator />
       <div className={`${activeChatId ? 'hidden md:block' : 'block w-full md:w-auto'} h-full`}>
         <Sidebar 
@@ -76,8 +112,12 @@ const MainApp = () => {
               <PersonaModal 
                 isModal={false}
                 onClose={() => {
-                  setShowPersonaForm(false);
-                  setEditingPersonaId(null);
+                  if (window.history.state?.isTellamaModal) {
+                    window.history.back();
+                  } else {
+                    setShowPersonaForm(false);
+                    setEditingPersonaId(null);
+                  }
                 }} 
                 editingPersonaId={editingPersonaId}
               />
@@ -90,15 +130,25 @@ const MainApp = () => {
         <PersonaModal 
           isModal={true}
           onClose={() => {
-            setShowPersonaForm(false);
-            setEditingPersonaId(null);
+            if (window.history.state?.isTellamaModal) {
+              window.history.back();
+            } else {
+              setShowPersonaForm(false);
+              setEditingPersonaId(null);
+            }
           }} 
           editingPersonaId={null}
         />
       )}
 
       {showUserProfile && (
-        <UserProfileModal onClose={() => setShowUserProfile(false)} />
+        <UserProfileModal onClose={() => {
+          if (window.history.state?.isTellamaModal) {
+            window.history.back();
+          } else {
+            setShowUserProfile(false);
+          }
+        }} />
       )}
     </div>
   );

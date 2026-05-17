@@ -123,6 +123,7 @@ body {
   color: var(--tg-text-color);
   margin: 0;
   overflow: hidden; /* Prevent scrolling on body, handled in containers */
+  overscroll-behavior: none;
 }
 
 /* Global Selection and Caret Styles */

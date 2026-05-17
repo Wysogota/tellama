@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev:ui": "vite",
+    "dev:ui": "vite --host",
     "dev:server": "nodemon server/index.js",
     "dev:letta": "bash scripts/letta-start.sh",
     "dev": "npm run dev:letta && concurrently --names \"UI,SERVER\" --prefix-colors \"cyan,green\" \"npm run dev:ui\" \"npm run dev:server\"",
@@ -33,6 +33,7 @@
     "@eslint/js": "^10.0.1",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-basic-ssl": "^2.3.0",
     "@vitejs/plugin-react": "^6.0.1",
     "autoprefixer": "^10.5.0",
     "eslint": "^10.2.1",

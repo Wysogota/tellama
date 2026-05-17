@@ -1,4 +1,4 @@
-const SERVER_URL = 'http://localhost:3001/letta';
+const SERVER_URL = '/api/letta';
 
 /**
  * Service to interact with the Letta Server via our Node.js Proxy.
