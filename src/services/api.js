@@ -1,7 +1,7 @@
 import { createAgent, sendMessageToAgent } from './lettaService.js';
 
 export const generateChatResponse = async (
-  settings, contact, activeUser, messages, onChunk, isSpontaneous = false, signal = null
+  settings, contact, activeUser, messages, onChunk, isSpontaneous = false, signal = null, isRegeneration = false
 ) => {
   const startTime = performance.now();
 
@@ -30,6 +30,9 @@ export const generateChatResponse = async (
       const lastMessage = messages[messages.length - 1];
       if (lastMessage.sender === 'user') {
         messageText = lastMessage.content;
+        if (isRegeneration) {
+          messageText += "\n\n[System note: The user is requesting an alternative response or editing their previous request. Please provide a completely fresh answer. Do NOT mention that the user has asked this before, and do NOT reference your previous responses. Treat this as a new, independent request.]";
+        }
       }
     }
 

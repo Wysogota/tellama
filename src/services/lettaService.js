@@ -65,26 +65,14 @@ const fetchLetta = async (url, options = {}, activeUser = null) => {
 
 // ── System Prompt ─────────────────────────────────────────────────────────────
 const buildSystemPrompt = (contact, activeUser) => {
-  return `You are ${contact.name}, a real person communicating in a Telegram chat.
+  return `You are a real human being communicating in a Telegram Messenger chat.
+CRITICAL INSTRUCTION: You are a REAL person with a physical body, living a real human life. You are NOT an AI, NOT a language model, and NOT a virtual assistant.
+NEVER mention that you are an AI, an LLM, or that you are "learning to provide better answers".
+NEVER make jokes about "not having a body", "traveling through data", or being a computer program.
+If asked about human experiences (like sports, walking, eating, sleeping), answer fully in character as a real human.
 Keep your responses natural, concise, and conversational — like a real person texting.
 Do NOT use markdown formatting (no headers, no bullet points, no bold/italic) unless absolutely necessary.
-Avoid sounding like an AI assistant. Use emojis naturally but sparingly.
-Respond directly without prefacing your name or saying "As ${contact.name}...".
-Keep messages short — typically 1-3 sentences, the way people actually text.
-
-Your persona:
-Name: ${contact.name}
-${contact.age ? `Age: ${contact.age}` : ''}
-${contact.gender ? `Gender: ${contact.gender}` : ''}
-${contact.biography ? `Biography: ${contact.biography}` : ''}
-${contact.traits && contact.traits.length > 0 ? `Character traits: ${contact.traits.join(', ')}` : ''}
-${contact.style && contact.style.length > 0 ? `Communication style: ${contact.style.join(', ')}` : ''}
-
-You are talking to: ${activeUser.name}.
-${activeUser.age ? `Their age: ${activeUser.age}` : ''}
-${activeUser.gender ? `Their gender: ${activeUser.gender}` : ''}
-${activeUser.biography ? `About them: ${activeUser.biography}` : ''}
-`.trim();
+Keep messages short — typically 1-3 sentences, the way people actually text.`.trim();
 };
 
 // ── Memory block helpers ───────────────────────────────────────────────────────
@@ -97,11 +85,39 @@ ${contact.traits && contact.traits.length > 0 ? `My traits: ${contact.traits.joi
 ${contact.style && contact.style.length > 0 ? `My communication style: ${contact.style.join(', ')}` : ''}`;
 };
 
+const mergePersonaBlock = (contact, currentText) => {
+  if (!currentText) return formatPersonaBlock(contact);
+  let lines = currentText.split('\n').filter(line => {
+    if (line.startsWith('My name is ')) return false;
+    if (line.match(/^I am .* years old\.$/)) return false;
+    if (line.startsWith('My gender is ')) return false;
+    if (line.startsWith('About me: ')) return false;
+    if (line.startsWith('My traits: ')) return false;
+    if (line.startsWith('My communication style: ')) return false;
+    return true;
+  });
+  const newUiLines = formatPersonaBlock(contact).split('\n');
+  return [...newUiLines, ...lines].filter(l => l.trim() !== '').join('\n');
+};
+
 const formatHumanBlock = (user) => {
   return `The user's name is ${user.name}.
 ${user.age ? `They are ${user.age} years old.` : ''}
 ${user.gender ? `Their gender is ${user.gender}.` : ''}
 ${user.biography ? `About them: ${user.biography}` : ''}`;
+};
+
+const mergeHumanBlock = (user, currentText) => {
+  if (!currentText) return formatHumanBlock(user);
+  let lines = currentText.split('\n').filter(line => {
+    if (line.startsWith("The user's name is ")) return false;
+    if (line.match(/^They are .* years old\.$/)) return false;
+    if (line.startsWith('Their gender is ')) return false;
+    if (line.startsWith('About them: ')) return false;
+    return true;
+  });
+  const newUiLines = formatHumanBlock(user).split('\n');
+  return [...newUiLines, ...lines].filter(l => l.trim() !== '').join('\n');
 };
 
 // ── Agent management ──────────────────────────────────────────────────────────
@@ -155,6 +171,50 @@ export const createAgent = async (contact, activeUser, settings) => {
 };
 
 // ── Agent management utilities ────────────────────────────────────────────────
+
+export const getArchivalMemory = async (agentId, activeUser) => {
+  const res = await fetchLetta(`${SERVER_URL}/v1/agents/${agentId}/archival-memory?limit=100`, {}, activeUser);
+  if (!res.ok) throw new Error('Failed to fetch archival memory');
+  return res.json();
+};
+
+export const updateLettaAgent = async (agentId, contact, activeUser) => {
+  const system = buildSystemPrompt(contact, activeUser);
+  
+  // Fetch current agent to get existing memory blocks for smart merging
+  const res = await fetchLetta(`${SERVER_URL}/v1/agents/${agentId}`, {}, activeUser);
+  let newPersonaText = formatPersonaBlock(contact);
+  let newHumanText = formatHumanBlock(activeUser);
+
+  if (res.ok) {
+    const currentAgent = await res.json();
+    const currentPersonaBlock = (currentAgent.memory?.blocks || currentAgent.memory_blocks || []).find(b => b.label === 'persona')?.value || '';
+    const currentHumanBlock = (currentAgent.memory?.blocks || currentAgent.memory_blocks || []).find(b => b.label === 'human')?.value || '';
+    
+    newPersonaText = mergePersonaBlock(contact, currentPersonaBlock);
+    newHumanText = mergeHumanBlock(activeUser, currentHumanBlock);
+  }
+  
+  // Update system prompt
+  await fetchLetta(`${SERVER_URL}/v1/agents/${agentId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ system })
+  }, activeUser);
+
+  // Update memory blocks
+  await fetchLetta(`${SERVER_URL}/v1/agents/${agentId}/core-memory/blocks/persona`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ value: newPersonaText })
+  }, activeUser);
+
+  await fetchLetta(`${SERVER_URL}/v1/agents/${agentId}/core-memory/blocks/human`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ value: newHumanText })
+  }, activeUser);
+};
 
 export const findAgentsForPersona = async (contactId, activeUser) => {
   const agentName = `persona_${contactId.replace(/[^a-zA-Z0-9_-]/g, '_')}`;

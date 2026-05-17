@@ -199,7 +199,7 @@ const ChatArea = ({ onOpenModelInfo }) => {
 
 
 
-  const startGeneration = async (historyToPass, parentNodeId) => {
+  const startGeneration = async (historyToPass, parentNodeId, isRegeneration = false) => {
     setIsGenerating(true);
     setStreamingText('');
     setStreamingParentId(parentNodeId);
@@ -214,7 +214,7 @@ const ChatArea = ({ onOpenModelInfo }) => {
         botResponseText += chunk;
         setStreamingText(botResponseText);
         scrollToBottom();
-      }, false, signal);
+      }, false, signal, isRegeneration);
       stats = result.stats;
 
       if (stats && stats.promptTokens) {
@@ -310,7 +310,7 @@ const ChatArea = ({ onOpenModelInfo }) => {
       const activeIdx = chatData.activeChildIndex[curr] || 0;
       curr = node.childrenIds[activeIdx];
     }
-    await startGeneration(historyToPass, parentNodeId);
+    await startGeneration(historyToPass, parentNodeId, true);
   };
 
   const handleEditSubmit = async (msg) => {
@@ -340,7 +340,7 @@ const ChatArea = ({ onOpenModelInfo }) => {
         historyToPass.push({ sender: 'user', content: editingText });
       }
 
-      await startGeneration(historyToPass, newMsgId);
+      await startGeneration(historyToPass, newMsgId, true);
     }
   };
 

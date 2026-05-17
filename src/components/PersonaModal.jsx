@@ -2,11 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { X, Check } from 'lucide-react';
 import { fetchModelInfo } from '../services/api';
+import { findAgentsForPersona, updateLettaAgent, getArchivalMemory } from '../services/lettaService';
 import AvatarUpload from './AvatarUpload';
 import TagInput from './TagInput';
 
 const PersonaModal = ({ onClose, editingPersonaId = null, isModal = false }) => {
-  const { personas, addPersona, updatePersona, settings, allTags } = useAppContext();
+  const { personas, addPersona, updatePersona, settings, allTags, userProfiles, activeUserProfileId } = useAppContext();
+  const activeUser = userProfiles?.find(p => p.id === activeUserProfileId) || userProfiles?.[0];
   
   const existingPersona = editingPersonaId ? personas.find(c => c.id === editingPersonaId) : null;
   
@@ -48,7 +50,11 @@ const PersonaModal = ({ onClose, editingPersonaId = null, isModal = false }) => 
   }, [editingPersonaId]);
 
   const [modelInfo, setModelInfo] = useState(null);
-
+  const [techInfo, setTechInfo] = useState(null);
+  const [isTechOpen, setIsTechOpen] = useState(false);
+  const [archivalMemory, setArchivalMemory] = useState(null);
+  const [isArchivalLoading, setIsArchivalLoading] = useState(false);
+  
   useEffect(() => {
     fetchModelInfo(settings.host).then(info => {
       if (info && info.data && info.data.length > 0) {
@@ -57,12 +63,29 @@ const PersonaModal = ({ onClose, editingPersonaId = null, isModal = false }) => 
     });
   }, [settings.host]);
 
-  const handleSubmit = (e) => {
+  useEffect(() => {
+    if (editingPersonaId && activeUser) {
+      findAgentsForPersona(editingPersonaId, activeUser).then(agents => {
+        if (agents && agents.length > 0) {
+          setTechInfo(agents[0]);
+        }
+      });
+    }
+  }, [editingPersonaId, activeUser]);
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.name.trim()) return;
 
     if (editingPersonaId) {
       updatePersona(editingPersonaId, formData);
+      if (techInfo) {
+        try {
+          await updateLettaAgent(techInfo.id, formData, activeUser);
+        } catch (err) {
+          console.error("Failed to sync Letta agent", err);
+        }
+      }
     } else {
       addPersona(formData);
     }
@@ -175,6 +198,125 @@ const PersonaModal = ({ onClose, editingPersonaId = null, isModal = false }) => 
             <p className="text-xs text-[var(--tg-hint-color)] mt-1">Allows the AI to start conversations or send messages without a prompt.</p>
           </div>
         </form>
+
+        {editingPersonaId && (
+          <div className="mt-6 border-t border-[var(--tg-border-color)] pt-4">
+            <button
+              type="button"
+              onClick={() => setIsTechOpen(!isTechOpen)}
+              className="flex items-center justify-between w-full text-sm font-medium text-[var(--tg-hint-color)] hover:text-[var(--tg-text-color)] transition-colors"
+            >
+              <span>Technical Information</span>
+              <span>{isTechOpen ? 'Hide' : 'Show'}</span>
+            </button>
+            
+            {isTechOpen && (
+              <div className="mt-2 p-3 bg-[var(--tg-secondary-bg-color)] rounded-lg text-sm border border-[var(--tg-border-color)] space-y-2">
+                {techInfo ? (
+                  <>
+                    <div className="flex justify-between py-1 border-b border-[var(--tg-border-color)]">
+                      <span className="text-[var(--tg-hint-color)]">ID:</span>
+                      <span className="font-mono text-xs">{techInfo.id}</span>
+                    </div>
+                    <div className="flex justify-between py-1 border-b border-[var(--tg-border-color)]">
+                      <span className="text-[var(--tg-hint-color)]">Name:</span>
+                      <span>{techInfo.name}</span>
+                    </div>
+                    <div className="flex justify-between py-1 border-b border-[var(--tg-border-color)]">
+                      <span className="text-[var(--tg-hint-color)]">Model:</span>
+                      <span>{techInfo.model || techInfo.llm_config?.model}</span>
+                    </div>
+                    
+                    {(techInfo.memory?.blocks || techInfo.memory_blocks) && (
+                      <div className="pt-2">
+                        <span className="text-[var(--tg-hint-color)] text-xs block mb-1">Memory Blocks:</span>
+                        {(techInfo.memory?.blocks || techInfo.memory_blocks).map(block => (
+                          <div key={block.label} className="mb-2 p-2 bg-[var(--tg-search-bg)] rounded-md text-xs">
+                            <span className="font-bold block mb-1">{block.label}</span>
+                            <div className="text-[var(--tg-hint-color)] whitespace-pre-wrap">{block.value}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    
+                    <div className="pt-2">
+                      <span className="text-[var(--tg-hint-color)] text-xs block mb-1">System Prompt:</span>
+                      <div className="p-2 bg-[var(--tg-search-bg)] rounded-md text-xs text-[var(--tg-hint-color)] whitespace-pre-wrap max-h-40 overflow-y-auto">
+                        {techInfo.system}
+                      </div>
+                    </div>
+                    <div className="pt-2 mt-2 border-t border-[var(--tg-border-color)]">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-[var(--tg-hint-color)] text-xs font-bold">Archival Memory</span>
+                        <button 
+                          type="button"
+                          disabled={isArchivalLoading}
+                          onClick={async () => {
+                            try {
+                              setIsArchivalLoading(true);
+                              const data = await getArchivalMemory(techInfo.id, activeUser);
+                              // Typically the array is inside data.passages, data.memory, or just data
+                              const memories = Array.isArray(data) ? data : (data.passages || data.results || []);
+                              setArchivalMemory(memories);
+                            } catch (e) {
+                              alert('Failed to load archival memory: ' + e.message);
+                            } finally {
+                              setIsArchivalLoading(false);
+                            }
+                          }}
+                          className="px-3 py-1 bg-[var(--tg-button-color)]/10 text-[var(--tg-button-color)] hover:bg-[var(--tg-button-color)]/20 rounded text-xs font-medium transition-colors disabled:opacity-50"
+                        >
+                          {isArchivalLoading ? 'Loading...' : 'Load Archival Memory'}
+                        </button>
+                      </div>
+                      
+                      {archivalMemory !== null && (
+                        <div className="space-y-2 mt-2 max-h-40 overflow-y-auto custom-scrollbar">
+                          {archivalMemory.length === 0 ? (
+                            <div className="text-xs text-[var(--tg-hint-color)] italic">Archival memory is empty.</div>
+                          ) : (
+                            archivalMemory.map((mem, i) => (
+                              <div key={mem.id || i} className="p-2 bg-[var(--tg-search-bg)] rounded-md text-xs">
+                                <div className="text-[var(--tg-hint-color)] whitespace-pre-wrap">{mem.text || mem.content || JSON.stringify(mem)}</div>
+                                {mem.created_at && (
+                                  <div className="text-[10px] text-[var(--tg-hint-color)]/70 mt-1 text-right">
+                                    {new Date(mem.created_at).toLocaleString()}
+                                  </div>
+                                )}
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="pt-2 mt-2 border-t border-[var(--tg-border-color)] flex justify-between items-center">
+                      <span className="text-[var(--tg-hint-color)] text-xs">Force Sync:</span>
+                      <button 
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            await updateLettaAgent(techInfo.id, formData, activeUser);
+                            const agents = await findAgentsForPersona(editingPersonaId, activeUser);
+                            if (agents && agents.length > 0) setTechInfo(agents[0]);
+                            alert('Agent successfully synchronized!');
+                          } catch (e) {
+                            alert('Sync failed: ' + e.message);
+                          }
+                        }}
+                        className="px-3 py-1 bg-red-500/10 text-red-500 hover:bg-red-500/20 rounded text-xs font-medium transition-colors"
+                      >
+                        Update Letta Agent
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <span className="text-[var(--tg-hint-color)]">No agent found or loading...</span>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="p-4 border-t border-[var(--tg-border-color)] flex justify-end bg-[var(--tg-bg-color)]">
