@@ -133,6 +133,14 @@ const SettingsPanel = ({ onBack }) => {
   }, [settings.theme]);
 
   useEffect(() => {
+    setLocalSettings(prev => ({ ...prev, accentColor: settings.accentColor }));
+  }, [settings.accentColor]);
+
+  useEffect(() => {
+    setLocalSettings(prev => ({ ...prev, bgIntensity: settings.bgIntensity }));
+  }, [settings.bgIntensity]);
+
+  useEffect(() => {
     Promise.all([
       fetch(`${SERVER_URL}/llm/key-status?provider=openrouter`).then(r => r.json()).catch(() => ({ configured: false })),
       fetch(`${SERVER_URL}/llm/key-status?provider=nvidia`).then(r => r.json()).catch(() => ({ configured: false })),
@@ -330,8 +338,8 @@ const SettingsPanel = ({ onBack }) => {
                   </div>
                 </div>
                 <div className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors ${localSettings.theme === 'dark'
-                    ? 'bg-[var(--tg-link-color)] text-white'
-                    : 'bg-[var(--tg-sidebar-hover)] text-[var(--tg-hint-color)]'
+                  ? 'bg-[var(--tg-link-color)] text-white'
+                  : 'bg-[var(--tg-sidebar-hover)] text-[var(--tg-hint-color)]'
                   }`}>
                   {localSettings.theme === 'dark' ? 'Enabled' : 'Disabled'}
                 </div>
@@ -348,7 +356,7 @@ const SettingsPanel = ({ onBack }) => {
                 ].map((c) => (
                   <button
                     key={c.id}
-                    onClick={() => setLocalSettings({ ...localSettings, accentColor: c.id })}
+                    onClick={() => updateSettings({ accentColor: c.id })}
                     className={`w-10 h-10 rounded-full flex items-center justify-center transition-all
                       ${localSettings.accentColor === c.id
                         ? 'ring-4 ring-[var(--tg-link-color)] ring-offset-2 ring-offset-[var(--tg-bg-color)] scale-110'
@@ -371,7 +379,7 @@ const SettingsPanel = ({ onBack }) => {
                 <input
                   type="range" min="0" max="100"
                   value={localSettings.bgIntensity}
-                  onChange={(e) => setLocalSettings({ ...localSettings, bgIntensity: parseInt(e.target.value) })}
+                  onChange={(e) => updateSettings({ bgIntensity: parseInt(e.target.value) })}
                   className="w-full h-1.5 bg-[var(--tg-secondary-bg-color)] rounded-lg appearance-none cursor-pointer accent-[var(--tg-link-color)]"
                 />
               </div>
@@ -437,8 +445,8 @@ const SettingsPanel = ({ onBack }) => {
                         <button
                           onClick={() => setLocalSettings(prev => ({ ...prev, freeModelsOnly: !prev.freeModelsOnly }))}
                           className={`text-[10px] px-2 py-0.5 rounded-full transition-colors border ${localSettings.freeModelsOnly
-                              ? 'bg-[var(--tg-link-color)] text-white border-[var(--tg-link-color)]'
-                              : 'bg-transparent text-[var(--tg-hint-color)] border-[var(--tg-border-color)] hover:border-[var(--tg-link-color)]/40'
+                            ? 'bg-[var(--tg-link-color)] text-white border-[var(--tg-link-color)]'
+                            : 'bg-transparent text-[var(--tg-hint-color)] border-[var(--tg-border-color)] hover:border-[var(--tg-link-color)]/40'
                             }`}
                         >
                           Free Models

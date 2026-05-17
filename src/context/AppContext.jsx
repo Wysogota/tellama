@@ -227,7 +227,7 @@ export const AppProvider = ({ children }) => {
         };
 
         try {
-          sync.startSync(SERVER_URL, reloadFromDB); // WS handles instant updates; 60s poll is fallback
+          sync.startSync(SERVER_URL, reloadFromDB, 5 * 60 * 1000); // WS handles instant updates; 5min poll is safety-net fallback
         } catch (e) {
           console.warn('[AppContext] SyncManager failed to start:', e.message);
         }
