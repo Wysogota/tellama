@@ -44,8 +44,14 @@ export const generateChatResponse = async (
       throw new Error("No user message found to send to Letta.");
     }
 
+    const currentTime = new Date().toLocaleString('en-US', { 
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', 
+      hour: '2-digit', minute: '2-digit', second: '2-digit'
+    });
+    const finalMessageText = `[Current System Time: ${currentTime}]\n${messageText}`;
+
     // 3. Send message to Letta Agent and stream response
-    const { content, stats } = await sendMessageToAgent(agentId, messageText, onChunk, signal, activeUser);
+    const { content, stats } = await sendMessageToAgent(agentId, finalMessageText, onChunk, signal, activeUser);
 
     const durationMs = performance.now() - startTime;
     return {
