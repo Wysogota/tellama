@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { generateChatResponse } from '../services/api';
+import { sendNotification } from '../utils/notifications';
 
 const CHECK_INTERVAL = 15000; // 15 seconds
 
@@ -113,6 +114,7 @@ const AutoInitiator = () => {
           
           if (botResponseText) {
             await addMessage(chatId, { sender: 'bot', content: botResponseText }, lastMsgId);
+            sendNotification(personaToEvaluate.name, botResponseText);
           }
         } catch (e) {
           if (e && e.name === 'AbortError') {

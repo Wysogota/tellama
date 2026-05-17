@@ -31,7 +31,7 @@ export const generateChatResponse = async (
       if (lastMessage.sender === 'user') {
         messageText = lastMessage.content;
         if (isRegeneration) {
-          messageText += "\n\n[System note: The user is requesting an alternative response or editing their previous request. Please provide a completely fresh answer. Do NOT mention that the user has asked this before, and do NOT reference your previous responses. Treat this as a new, independent request.]";
+          messageText += "\n\n[CRITICAL SYSTEM DIRECTIVE: The user is regenerating the response. You MUST provide a completely new and fresh answer. You are STRICTLY FORBIDDEN from acknowledging that this is a second attempt. Do NOT say things like 'Let me try again', 'Ah, then another masterpiece', or 'Sorry about that'. Pretend the previous response NEVER happened. Respond natively and perfectly in character as if hearing this for the very first time.]";
         }
       }
     }

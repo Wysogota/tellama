@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { Paperclip, SendHorizontal, MoreVertical, Loader2, Edit2, Trash2, RotateCcw, ChevronLeft, ChevronRight, ArrowLeft, CheckCheck, Check, Smile, Mic, Search, X, Calendar, FileText, Image as ImageIcon, XCircle, FileCode, FileType, File, Download, Maximize2, Reply, Copy, Languages, Pin, Forward, CheckCircle2 } from 'lucide-react';
 import { generateChatResponse } from '../services/api';
+import { requestNotificationPermission, sendNotification } from '../utils/notifications';
 import EmojiPicker, { Theme } from 'emoji-picker-react';
 
 const getDayDiff = (d1, d2) => {
@@ -238,6 +239,9 @@ const ChatArea = ({ onOpenModelInfo }) => {
           content: botResponseText,
           stats: stats
         }, parentNodeId);
+        
+        // Trigger notification if tab is hidden
+        sendNotification(activePersona?.name || 'Tellama', botResponseText);
       }
       setStreamingText('');
       setStreamingParentId(null);
@@ -254,6 +258,9 @@ const ChatArea = ({ onOpenModelInfo }) => {
   const handleSendRobust = async () => {
     if ((!inputText.trim() && attachments.length === 0) || !activePersona || isGenerating) return;
     
+    // Request notification permission on first user interaction
+    requestNotificationPermission();
+
     let finalContent = inputText.trim();
     let llmContent = finalContent;
     if (attachments.length > 0) {
