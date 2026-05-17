@@ -5,16 +5,24 @@ import ContactsPanel from './ContactsPanel';
 import SettingsPanel from './SettingsPanel';
 
 const Sidebar = ({ onEditPersona, onOpenUserProfile }) => {
-  const { 
-    personas, chatSessions, activeChatId, setActiveChatId, 
-    messages, userProfiles, activeUserProfileId, setActiveUserProfileId, 
-    addUserProfile, settings, updateSettings 
+  const {
+    personas, chatSessions, activeChatId, setActiveChatId,
+    messages, userProfiles, activeUserProfileId, setActiveUserProfileId,
+    addUserProfile, settings, updateSettings
   } = useAppContext();
-  
+
   const [view, setView] = useState('chats'); // 'chats' | 'contacts' | 'settings'
   const [searchQuery, setSearchQuery] = useState('');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [ripple, setRipple] = useState(null); // { sessionId, x, y }
+
+  // Clear ripple when navigating back to sidebar (activeChatId becomes null)
+  React.useEffect(() => {
+    if (!activeChatId) {
+      setRipple(null);
+    }
+  }, [activeChatId]);
   const menuRef = React.useRef(null);
 
   // History / PopState for Sidebar
@@ -89,33 +97,27 @@ const Sidebar = ({ onEditPersona, onOpenUserProfile }) => {
       });
   }, [chatSessions, personas, searchQuery, messages, activeUserProfileId]);
 
-  const createRipple = (event) => {
-    const button = event.currentTarget;
-    const circle = document.createElement("span");
-    const diameter = Math.max(button.clientWidth, button.clientHeight);
-    const radius = diameter / 2;
-
-    circle.style.width = circle.style.height = `${diameter}px`;
-    circle.style.left = `${event.clientX - button.getBoundingClientRect().left - radius}px`;
-    circle.style.top = `${event.clientY - button.getBoundingClientRect().top - radius}px`;
-    circle.classList.add("ripple-effect");
-
-    const ripple = button.getElementsByClassName("ripple-effect")[0];
-    if (ripple) ripple.remove();
-
-    button.appendChild(circle);
+  const handleChatClick = (e, sessionId) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    setRipple({
+      sessionId,
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+      key: Date.now()
+    });
+    setActiveChatId(sessionId);
   };
 
   return (
     <div className="w-full md:w-[400px] lg:w-[450px] bg-[var(--tg-sidebar-bg)] flex flex-col h-full z-10 relative shadow-sm flex-shrink-0 overflow-hidden">
-      
+
       <div className={`sidebar-view-container h-full view-${view}`}>
-        
+
         {/* VIEW 1: CHATS */}
         <div className="sidebar-view flex flex-col">
           <div className="flex items-center px-4 h-[60px] flex-shrink-0 bg-[var(--tg-bg-color)]">
             <div className="relative" ref={menuRef}>
-              <button 
+              <button
                 onClick={() => setIsMenuOpen(!isMenuOpen)}
                 className={`p-2 mr-2 text-[var(--tg-hint-color)] hover:bg-[var(--tg-sidebar-hover)] rounded-full transition-colors ${isMenuOpen ? 'bg-[var(--tg-sidebar-hover)] text-[var(--tg-link-color)]' : ''}`}
               >
@@ -147,7 +149,7 @@ const Sidebar = ({ onEditPersona, onOpenUserProfile }) => {
                         <span className="font-medium text-[15px] truncate">{profile.name}</span>
                       </button>
                     ))}
-                    
+
                     <button
                       onClick={() => {
                         onOpenUserProfile();
@@ -173,7 +175,7 @@ const Sidebar = ({ onEditPersona, onOpenUserProfile }) => {
                       <Archive size={20} className="mr-4 text-[var(--tg-hint-color)]" />
                       <span className="text-[15px]">Archived Chats</span>
                     </button>
-                    <button 
+                    <button
                       onClick={() => { setView('contacts'); setIsMenuOpen(false); }}
                       className="w-full flex items-center px-3 py-2.5 rounded-xl hover:bg-[var(--tg-sidebar-hover)] text-[var(--tg-text-color)] transition-colors"
                     >
@@ -185,14 +187,14 @@ const Sidebar = ({ onEditPersona, onOpenUserProfile }) => {
                   <div className="h-[1px] bg-[var(--tg-border-color)] mx-3 my-1 opacity-50" />
 
                   <div className="px-2 space-y-0.5">
-                    <button 
+                    <button
                       onClick={() => { setView('settings'); setIsMenuOpen(false); }}
                       className="w-full flex items-center px-3 py-2.5 rounded-xl hover:bg-[var(--tg-sidebar-hover)] text-[var(--tg-text-color)] transition-colors"
                     >
                       <Settings size={20} className="mr-4 text-[var(--tg-hint-color)]" />
                       <span className="text-[15px]">Settings</span>
                     </button>
-                    <button 
+                    <button
                       onClick={() => {
                         updateSettings({ theme: settings.theme === 'dark' ? 'light' : 'dark' });
                         setIsMenuOpen(false);
@@ -229,15 +231,11 @@ const Sidebar = ({ onEditPersona, onOpenUserProfile }) => {
               return (
                 <div
                   key={session.id}
-                  onClick={(e) => {
-                    createRipple(e);
-                    setActiveChatId(session.id);
-                  }}
-                  className={`flex items-center px-3 py-[10px] cursor-pointer transition-all duration-200 mb-1 rounded-[10px] ripple-container select-none ${
-                    isActive 
-                      ? 'bg-[var(--tg-sidebar-active)] text-[var(--tg-sidebar-active-text)]' 
+                  onClick={(e) => handleChatClick(e, session.id)}
+                  className={`flex items-center px-3 py-[10px] cursor-pointer transition-all duration-200 mb-1 rounded-[10px] ripple-container select-none ${isActive
+                      ? 'bg-[var(--tg-sidebar-active)] text-[var(--tg-sidebar-active-text)]'
                       : 'hover:bg-[var(--tg-sidebar-hover)] text-[var(--tg-text-color)]'
-                  }`}
+                    }`}
                 >
                   <div className="w-[54px] h-[54px] rounded-full overflow-hidden bg-gradient-to-br from-blue-400 to-blue-600 flex-shrink-0 flex items-center justify-center text-white font-semibold text-xl mr-3 shadow-sm">
                     {persona.avatar ? (
@@ -250,15 +248,28 @@ const Sidebar = ({ onEditPersona, onOpenUserProfile }) => {
                     <div className="flex justify-between items-baseline mb-0.5">
                       <h3 className="font-semibold truncate text-[16px]">{session.name || persona.name}</h3>
                       {lastMsg && (
-                         <span className={`text-[12px] ml-2 flex-shrink-0 ${isActive ? 'text-white/80' : 'text-[var(--tg-hint-color)]'}`}>
-                           {new Date(lastMsg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                         </span>
+                        <span className={`text-[12px] ml-2 flex-shrink-0 ${isActive ? 'text-white/80' : 'text-[var(--tg-hint-color)]'}`}>
+                          {new Date(lastMsg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
                       )}
                     </div>
                     <p className={`text-[15px] truncate ${isActive ? 'text-white/90' : 'text-[var(--tg-hint-color)]'}`}>
                       {lastMsg ? lastMsg.content : 'No messages yet'}
                     </p>
                   </div>
+                  {ripple && ripple.sessionId === session.id && (
+                    <span
+                      key={ripple.key}
+                      className="ripple-effect"
+                      style={{
+                        width: '200px',
+                        height: '200px',
+                        left: ripple.x - 100 + 'px',
+                        top: ripple.y - 100 + 'px',
+                      }}
+                      onAnimationEnd={() => setRipple(null)}
+                    />
+                  )}
                 </div>
               );
             })}
@@ -274,15 +285,15 @@ const Sidebar = ({ onEditPersona, onOpenUserProfile }) => {
 
         {/* VIEW 2: CONTACTS */}
         <div className="sidebar-view">
-          <ContactsPanel 
-            onBack={() => setView('chats')} 
+          <ContactsPanel
+            onBack={() => setView('chats')}
             onEditPersona={onEditPersona}
           />
         </div>
 
         {/* VIEW 3: SETTINGS */}
         <div className="sidebar-view">
-          <SettingsPanel 
+          <SettingsPanel
             onBack={() => setView('chats')}
           />
         </div>

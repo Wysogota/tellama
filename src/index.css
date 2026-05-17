@@ -160,7 +160,7 @@ input[type=number] {
   background: var(--tg-text-color);
   opacity: 0.08;
   transform: scale(0);
-  animation: ripple-animation 800ms ease-out;
+  animation: ripple-animation 600ms ease-out forwards;
   pointer-events: none;
 }
 

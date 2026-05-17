@@ -4,6 +4,55 @@ import { Paperclip, SendHorizontal, MoreVertical, Loader2, Edit2, Trash2, Rotate
 import { generateChatResponse } from '../services/api';
 import EmojiPicker, { Theme } from 'emoji-picker-react';
 
+const getDayDiff = (d1, d2) => {
+  const t1 = new Date(d1.getFullYear(), d1.getMonth(), d1.getDate()).getTime();
+  const t2 = new Date(d2.getFullYear(), d2.getMonth(), d2.getDate()).getTime();
+  return Math.floor((t2 - t1) / (1000 * 60 * 60 * 24));
+};
+
+const getDateLabel = (timestamp) => {
+  const date = new Date(timestamp);
+  const today = new Date();
+  
+  const dayDiff = getDayDiff(date, today);
+
+  if (dayDiff === 0) return 'Today';
+  if (dayDiff === 1) return 'Yesterday';
+  if (dayDiff < 7 && dayDiff > 0) {
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    return days[date.getDay()];
+  }
+
+  return date.toLocaleDateString([], { day: 'numeric', month: 'long', year: 'numeric' });
+};
+
+const isSameDay = (d1, d2) => d1.toDateString() === d2.toDateString();
+
+const getCalendarDays = (currentDate) => {
+  const year = currentDate.getFullYear();
+  const month = currentDate.getMonth();
+  
+  const firstDay = new Date(year, month, 1).getDay();
+  const startDay = firstDay === 0 ? 6 : firstDay - 1;
+  
+  const days = [];
+  
+  const startDate = new Date(year, month, 1);
+  startDate.setDate(startDate.getDate() - startDay);
+  
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(startDate);
+    d.setDate(d.getDate() + i);
+    days.push({
+      date: d,
+      isCurrentMonth: d.getMonth() === month,
+      isToday: d.toDateString() === new Date().toDateString()
+    });
+  }
+  
+  return days;
+};
+
 const ChatArea = ({ onOpenModelInfo }) => {
   const { personas, chatSessions, activeChatId, setActiveChatId, messages, addMessage, updateMessage, setFullMessageContent, deleteMessageNode, switchBranch, settings, userProfiles, activeUserProfileId, deleteChat, renameChat, getNewAbortSignal, clearGeneration, streamingMessages, updateMessageMetadata } = useAppContext();
   const [inputText, setInputText] = useState('');
@@ -22,6 +71,9 @@ const ChatArea = ({ onOpenModelInfo }) => {
   const [tempChatName, setTempChatName] = useState('');
   const [contextMenu, setContextMenu] = useState(null); // { x, y, msg }
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+  const [calendarDate, setCalendarDate] = useState(new Date());
+  const [selectedDate, setSelectedDate] = useState(new Date());
   
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -525,28 +577,7 @@ const ChatArea = ({ onOpenModelInfo }) => {
         <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'}`}>
           {!isEditing && (
             <>
-              <div className={`flex items-center gap-3 mt-1 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
-                {msg.stats && (
-                  (isUser && msg.stats.promptTokens > 0) || 
-                  (!isUser && (msg.stats.completionTokens > 0 || msg.stats.speed > 0))
-                ) && (
-                  <div className="text-[10px] text-[var(--tg-hint-color)] flex items-center gap-2 px-1">
-                    {isUser ? (
-                      <span>{msg.stats.promptTokens} tkn</span>
-                    ) : (
-                      <>
-                        {msg.stats.completionTokens > 0 && <span>{msg.stats.completionTokens} tkn</span>}
-                        {msg.stats.speed > 0 && (
-                          <>
-                            <span className="opacity-30">|</span>
-                            <span>{msg.stats.speed?.toFixed(1)} t/s</span>
-                          </>
-                        )}
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
+
 
               {hasVariants && (
                 <div className={`flex items-center gap-2 mt-1 text-xs text-[var(--tg-hint-color)] ${isUser ? 'mr-2' : 'ml-2'}`}>
@@ -729,7 +760,7 @@ const ChatArea = ({ onOpenModelInfo }) => {
                 {chatSearchQuery.trim() && showSearchResults && (<div className={`absolute top-[50px] left-0 right-0 max-h-[400px] overflow-y-auto shadow-2xl rounded-b-2xl z-50 custom-scrollbar transition-all duration-300 origin-top ${isSearchFocused ? 'bg-[var(--tg-search-bg-focused)]' : 'bg-[var(--tg-search-bg)]'}`}>{searchResults.length > 0 ? (<div className="flex flex-col py-2 gap-1">{searchResults.map((msg) => (<div key={msg.id} onClick={() => scrollToMessage(msg.id)} className="flex items-center mx-1 px-2 py-2 hover:bg-[var(--tg-border-color)] cursor-pointer transition-colors rounded-xl"><div className="w-10 h-10 rounded-full overflow-hidden bg-blue-500/20 flex-shrink-0 mr-3">{(msg.sender === 'user' ? activeUser : activePersona)?.avatar ? <img src={(msg.sender === 'user' ? activeUser : activePersona).avatar} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-blue-500 font-bold">{(msg.sender === 'user' ? activeUser : activePersona)?.name?.charAt(0).toUpperCase()}</div>}</div><div className="flex-grow min-w-0"><div className="flex justify-between items-baseline"><span className="font-semibold text-[15px] truncate text-[var(--tg-text-color)]">{(msg.sender === 'user' ? activeUser : activePersona)?.name}</span><span className="text-[12px] text-[var(--tg-hint-color)] ml-2 flex-shrink-0">{new Date(msg.timestamp).toLocaleDateString()}</span></div><p className="text-[14px] text-[var(--tg-hint-color)] truncate">{msg.content}</p></div></div>))}</div>) : <div className="p-8 text-center text-[var(--tg-hint-color)]">No results found</div>}</div>)}
               </div>
               <button onClick={() => { setIsSearchActive(false); setChatSearchQuery(''); }} className="p-2 text-[var(--tg-hint-color)] hover:bg-[var(--tg-secondary-bg-color)] rounded-full transition-colors"><X size={20} /></button>
-              <button className="p-2 text-[var(--tg-hint-color)] hover:bg-[var(--tg-secondary-bg-color)] rounded-full transition-colors">
+              <button onClick={() => setIsCalendarOpen(true)} className="p-2 text-[var(--tg-hint-color)] hover:bg-[var(--tg-secondary-bg-color)] rounded-full transition-colors">
                 <Calendar size={20} />
               </button>
             </div>
@@ -743,7 +774,33 @@ const ChatArea = ({ onOpenModelInfo }) => {
         style={{ overflowAnchor: 'auto' }}
       >
         <div className="max-w-[720px] mx-auto w-full p-4 flex flex-col space-y-2 messages-list-container">
-          {activeMessages.map((msg, idx) => renderMessageBubbles(msg, activeMessages[idx-1], activeMessages[idx+1]))}
+          {activeMessages.map((msg, idx) => {
+            const prevMsg = activeMessages[idx - 1];
+            const msgDate = new Date(msg.timestamp);
+            const prevMsgDate = prevMsg ? new Date(prevMsg.timestamp) : null;
+            
+            const showDateSeparator = !prevMsgDate || !isSameDay(msgDate, prevMsgDate);
+            
+            return (
+              <React.Fragment key={msg.id}>
+                {showDateSeparator && (
+                  <div className="flex justify-center my-2">
+                    <div 
+                      onClick={() => {
+                        setSelectedDate(new Date(msg.timestamp));
+                        setCalendarDate(new Date(msg.timestamp));
+                        setIsCalendarOpen(true);
+                      }}
+                      className="bg-[var(--tg-secondary-bg-color)] text-[var(--tg-hint-color)] text-[13px] font-medium px-4 py-1 rounded-full shadow-sm cursor-pointer hover:bg-[var(--tg-border-color)] transition-colors"
+                    >
+                      {getDateLabel(msg.timestamp)}
+                    </div>
+                  </div>
+                )}
+                {renderMessageBubbles(msg, prevMsg, activeMessages[idx + 1])}
+              </React.Fragment>
+            );
+          })}
           
           {/* Detailed Thinking / Loading State - Restored */}
           {displayIsGenerating && !displayStreamingText && (
@@ -827,6 +884,89 @@ const ChatArea = ({ onOpenModelInfo }) => {
           <button onClick={handleSendRobust} className="w-[44px] h-[44px] bg-gradient-to-br from-[var(--tg-link-color)] to-purple-600 text-white rounded-full flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 transition-all flex-shrink-0 mb-0.5">{inputText.trim() || attachments.length > 0 ? <SendHorizontal size={20} fill="currentColor" className="ml-0.5" /> : <Mic size={20} />}</button>
         </div>
       </div>
+
+      {isCalendarOpen && (
+        <div className="fixed inset-0 z-[100] bg-black/50 flex items-center justify-center animate-in fade-in duration-200" onClick={() => setIsCalendarOpen(false)}>
+          <div className="bg-[var(--tg-bg-color)] w-full max-w-[420px] mx-4 rounded-2xl shadow-2xl p-4 flex flex-col gap-4 animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div className="flex items-center justify-between">
+              <button onClick={() => setIsCalendarOpen(false)} className="text-[var(--tg-hint-color)] hover:text-[var(--tg-text-color)] transition-colors">
+                <X size={24} />
+              </button>
+              <h3 className="text-[var(--tg-text-color)] font-semibold text-[17px]">
+                {calendarDate.toLocaleDateString([], { month: 'long', year: 'numeric' })}
+              </h3>
+              <div className="flex gap-2">
+                <button 
+                  onClick={() => setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() - 1, 1))}
+                  className="text-[var(--tg-hint-color)] hover:text-[var(--tg-text-color)] transition-colors"
+                >
+                  <ChevronLeft size={24} />
+                </button>
+                <button 
+                  onClick={() => setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() + 1, 1))}
+                  className="text-[var(--tg-hint-color)] hover:text-[var(--tg-text-color)] transition-colors"
+                >
+                  <ChevronRight size={24} />
+                </button>
+              </div>
+            </div>
+            
+            {/* Weekdays */}
+            <div className="grid grid-cols-7 text-center text-[var(--tg-hint-color)] text-[13px] font-medium">
+              <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
+            </div>
+            
+            {/* Days Grid */}
+            <div className="grid grid-cols-7 gap-y-1 text-center">
+              {getCalendarDays(calendarDate).map(({ date, isCurrentMonth, isToday }, idx) => {
+                const isSelected = selectedDate && isSameDay(date, selectedDate);
+                
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const compareDate = new Date(date);
+                compareDate.setHours(0, 0, 0, 0);
+                const isFuture = compareDate > today;
+                
+                return (
+                  <button 
+                    key={idx}
+                    onClick={() => !isFuture && setSelectedDate(date)}
+                    disabled={isFuture}
+                    className={`w-10 h-10 mx-auto flex items-center justify-center rounded-full text-[15px] transition-colors ${
+                      isCurrentMonth ? 'text-[var(--tg-text-color)]' : 'text-[var(--tg-hint-color)] opacity-50'
+                    } ${
+                      isSelected ? 'bg-[var(--tg-link-color)] text-white' : ''
+                    } ${
+                      isToday && !isSelected ? 'border border-[var(--tg-link-color)]' : ''
+                    } ${
+                      isFuture ? 'opacity-25 cursor-not-allowed' : 'hover:bg-[var(--tg-secondary-bg-color)]'
+                    }`}
+                  >
+                    {date.getDate()}
+                  </button>
+                );
+              })}
+            </div>
+            
+            {/* Action Button */}
+            <button 
+              onClick={() => {
+                if (selectedDate) {
+                  const msg = activeMessages.find(m => isSameDay(new Date(m.timestamp), selectedDate));
+                  if (msg) {
+                    scrollToMessage(msg.id);
+                  }
+                  setIsCalendarOpen(false);
+                }
+              }}
+              className="w-full bg-[var(--tg-button-color)] hover:opacity-90 text-[var(--tg-button-text-color)] font-medium py-3 rounded-xl transition-colors"
+            >
+              Jump to Date
+            </button>
+          </div>
+        </div>
+      )}
 
       {previewFile && (<div className="fixed inset-0 z-[100] bg-black/90 flex flex-col animate-in fade-in duration-300" onClick={() => setPreviewFile(null)}><div className="h-[60px] flex items-center justify-between px-6 bg-gradient-to-b from-black/50 to-transparent"><div className="flex flex-col text-white"><span className="font-medium truncate max-w-[300px]">{previewFile.name}</span><span className="text-gray-400 text-[12px]">{formatSize(previewFile.size)}</span></div><div className="flex gap-4"><button className="p-2 text-white hover:bg-white/10 rounded-full transition-colors"><Download size={22} /></button><button onClick={() => setPreviewFile(null)} className="p-2 text-white hover:bg-white/10 rounded-full transition-colors"><X size={24} /></button></div></div><div className="flex-grow flex items-center justify-center p-4 overflow-hidden" onClick={e => e.stopPropagation()}>{previewFile.type.startsWith('image/') ? <img src={previewFile.dataUrl || previewFile.previewUrl} className="max-w-full max-h-full object-contain shadow-2xl rounded-lg animate-in zoom-in-95 duration-300" /> : <div className="w-full max-w-4xl h-full bg-[#1e1e1e] rounded-xl shadow-2xl border border-white/10 flex flex-col overflow-hidden animate-in slide-in-from-bottom-4"><div className="h-10 bg-white/5 border-b border-white/10 flex items-center px-4"><div className="flex items-center gap-2">{getFileIcon(previewFile)}<span className="text-gray-400 text-xs uppercase">{previewFile.name.split('.').pop()} File</span></div></div><div className="flex-grow overflow-auto p-6 custom-scrollbar">{previewFile.content ? <pre className="text-gray-300 font-mono text-[14px] leading-relaxed whitespace-pre-wrap">{previewFile.content}</pre> : <div className="h-full flex flex-col items-center justify-center text-gray-500 gap-4"><File size={64} strokeWidth={1} /><span>No text preview available</span></div>}</div></div>}</div></div>)}
 
