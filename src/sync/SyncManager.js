@@ -12,6 +12,7 @@ let wsReconnectTimeout = null;
 let wsReconnectDelay = 1000; // start at 1s, exponential backoff up to 30s
 let _wsServerUrl = null;
 let _wsOnInvalidate = null; // called immediately on 'invalidate' from server
+let _wsOnStreamEvent = null; // called on stream_start, stream_chunk, stream_end
 
 function connectWebSocket() {
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
@@ -42,6 +43,8 @@ function connectWebSocket() {
         }
       } else if (msg.type === 'letta_request') {
         console.log('%c[Letta → Provider Request]', 'color: #10b981; font-weight: bold; font-size: 11px;', msg.data);
+      } else if (['stream_start', 'stream_chunk', 'stream_end'].includes(msg.type)) {
+        if (_wsOnStreamEvent) _wsOnStreamEvent(msg.type, msg.sessionId, msg.content);
       }
     } catch (e) {
       console.warn('[SyncManager WS] Message parse error:', e.message);
@@ -235,12 +238,13 @@ export async function syncPull(serverUrl) {
   return false;
 }
 
-export function startSync(serverUrl, onPullComplete = null, intervalMs = 60000) {
+export function startSync(serverUrl, onPullComplete = null, intervalMs = 60000, onStreamEvent = null) {
   if (syncInterval) clearInterval(syncInterval);
 
   // Store for WebSocket handler
   _wsServerUrl = serverUrl;
   _wsOnInvalidate = onPullComplete;
+  _wsOnStreamEvent = onStreamEvent;
 
   // Initial sync on startup
   const runInitial = async () => {

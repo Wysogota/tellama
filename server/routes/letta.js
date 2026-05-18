@@ -80,6 +80,8 @@ router.use(async (req, res) => {
       let assistantContent = '';
       const decoder = new TextDecoder('utf-8');
 
+      notifyClients({ type: 'stream_start', sessionId });
+
       nodeStream.on('data', (chunk) => {
         if (!res.writableEnded) res.write(chunk);
 
@@ -94,6 +96,7 @@ router.use(async (req, res) => {
             const msg = JSON.parse(dataStr);
             if (msg.message_type === 'assistant_message' && msg.content) {
               assistantContent += msg.content;
+              notifyClients({ type: 'stream_chunk', sessionId, content: assistantContent });
             }
           } catch (_) { /* non-JSON SSE line */ }
         }
@@ -102,6 +105,7 @@ router.use(async (req, res) => {
       nodeStream.on('end', () => {
         if (!res.writableEnded) res.end();
         if (assistantContent) persistAssistantMessage(sessionId, parentMessageId, assistantContent);
+        notifyClients({ type: 'stream_end', sessionId });
       });
 
       nodeStream.on('error', () => { if (!res.writableEnded) res.end(); });

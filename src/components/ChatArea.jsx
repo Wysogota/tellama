@@ -178,7 +178,7 @@ const ChatArea = ({ onOpenModelInfo }) => {
   const [streamingParentId, setStreamingParentId] = useState(null);
 
   const displayStreamingText = streamingText || streamingMessages[activeChatId] || '';
-  const displayIsGenerating = isGenerating || !!streamingMessages[activeChatId];
+  const displayIsGenerating = isGenerating || activeChatId in streamingMessages;
 
   const lastSeenStatus = React.useMemo(() => {
     const botMessages = activeMessages.filter(m => m.sender === 'bot');

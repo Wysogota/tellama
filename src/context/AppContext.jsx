@@ -227,7 +227,17 @@ export const AppProvider = ({ children }) => {
         };
 
         try {
-          sync.startSync(SERVER_URL, reloadFromDB, 5 * 60 * 1000); // WS handles instant updates; 5min poll is safety-net fallback
+          sync.startSync(SERVER_URL, reloadFromDB, 5 * 60 * 1000, (type, sessionId, content) => {
+            if (type === 'stream_start' || type === 'stream_chunk') {
+              setStreamingMessages(prev => ({ ...prev, [sessionId]: content || '' }));
+            } else if (type === 'stream_end') {
+              setStreamingMessages(prev => {
+                const next = { ...prev };
+                delete next[sessionId];
+                return next;
+              });
+            }
+          }); // WS handles instant updates; 5min poll is safety-net fallback
         } catch (e) {
           console.warn('[AppContext] SyncManager failed to start:', e.message);
         }
