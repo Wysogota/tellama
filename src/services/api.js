@@ -1,4 +1,4 @@
-import { createAgent, sendMessageToAgent } from './lettaService.js';
+import { createAgent, sendMessageToAgent, syncPersonaMemory } from './lettaService.js';
 
 export const generateChatResponse = async (
   settings, contact, activeUser, messages, onChunk, isSpontaneous = false, signal = null, isRegeneration = false,
@@ -53,6 +53,9 @@ export const generateChatResponse = async (
 
     // 3. Send message to Letta Agent and stream response
     const { content, stats } = await sendMessageToAgent(agentId, finalMessageText, onChunk, signal, activeUser, sessionId, parentMessageId);
+
+    // 4. Fire-and-forget: sync updated persona memory to all sibling agents (other profiles)
+    syncPersonaMemory(contact, agentId).catch(e => console.warn('[API] Persona memory sync error:', e));
 
     const durationMs = performance.now() - startTime;
     return {

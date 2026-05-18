@@ -122,7 +122,7 @@ const mergeHumanBlock = (user, currentText) => {
 
 // ── Agent management ──────────────────────────────────────────────────────────
 export const createAgent = async (contact, activeUser, settings) => {
-  const agentName = `persona_${contact.id.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+  const agentName = `persona_${contact.id.replace(/[^a-zA-Z0-9_-]/g, '_')}_user_${activeUser.id.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
 
   // Return existing agent if already created
   try {
@@ -140,14 +140,30 @@ export const createAgent = async (contact, activeUser, settings) => {
     console.warn('[LettaService] Failed to list agents, proceeding to create...', e);
   }
 
+  // Seed persona memory from an existing agent for this persona (another profile)
+  // so all profiles share the same persona knowledge base.
+  let initialPersonaText = formatPersonaBlock(contact);
+  try {
+    const sibling = await getLatestPersonaAgent(contact.id);
+    if (sibling) {
+      const siblingPersona = await getAgentPersonaBlock(sibling.id, sibling._lettaUserId);
+      if (siblingPersona) {
+        initialPersonaText = siblingPersona;
+        console.log(`[LettaService] Seeding persona memory from sibling agent ${sibling.id} for ${contact.name}`);
+      }
+    }
+  } catch (e) {
+    console.warn('[LettaService] Could not seed from sibling agent:', e);
+  }
+
   const payload = {
     name: agentName,
     system: buildSystemPrompt(contact, activeUser),
     memory_blocks: [
-      { label: 'persona', value: formatPersonaBlock(contact) },
+      { label: 'persona', value: initialPersonaText },
       { label: 'human',   value: formatHumanBlock(activeUser) }
     ],
-    model: settings?.modelName || 'tellama-dynamic-model',
+    model: 'openai-proxy/test-model',
     embedding_config: {
       embedding_model: 'text-embedding-ada-002',
       embedding_endpoint_type: 'openai',
@@ -217,7 +233,7 @@ export const updateLettaAgent = async (agentId, contact, activeUser) => {
 };
 
 export const findAgentsForPersona = async (contactId, activeUser) => {
-  const agentName = `persona_${contactId.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+  const agentName = `persona_${contactId.replace(/[^a-zA-Z0-9_-]/g, '_')}_user_${activeUser.id.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
   const res = await fetchLetta(`${SERVER_URL}/v1/agents?name=${agentName}`, {}, activeUser);
   if (!res.ok) return [];
   const data = await res.json();
@@ -240,7 +256,7 @@ export const resetAgentForPersona = async (contact, activeUser, settings) => {
   console.log(`[LettaService] Resetting agent for persona: ${contact.name} (${contact.id}) user: ${activeUser.name}`);
   await deleteAgentsForPersona(contact.id, activeUser);
 
-  const agentName = `persona_${contact.id.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+  const agentName = `persona_${contact.id.replace(/[^a-zA-Z0-9_-]/g, '_')}_user_${activeUser.id.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
   const payload = {
     name: agentName,
     system: buildSystemPrompt(contact, activeUser),
@@ -248,7 +264,7 @@ export const resetAgentForPersona = async (contact, activeUser, settings) => {
       { label: 'persona', value: formatPersonaBlock(contact) },
       { label: 'human',   value: formatHumanBlock(activeUser) }
     ],
-    model: settings?.modelName || 'tellama-dynamic-model',
+    model: 'openai-proxy/test-model',
     embedding_config: {
       embedding_model: 'text-embedding-ada-002',
       embedding_endpoint_type: 'openai',
@@ -281,6 +297,93 @@ export const resetAllPersonaAgents = async () => {
   }
   console.log('[LettaService] Done. Agents will be recreated on next message.');
 };
+// ── Cross-profile persona memory sync ────────────────────────────────────────
+
+// Fetch all Letta users via admin API
+const getAllLettaUsers = async () => {
+  let allUsers = [];
+  let cursor = null;
+  while (true) {
+    const url = `${SERVER_URL}/v1/admin/users/?limit=100${cursor ? '&after=' + cursor : ''}`;
+    const res = await fetch(url);
+    if (!res.ok) break;
+    const data = await res.json();
+    if (!Array.isArray(data) || data.length === 0) break;
+    allUsers.push(...data);
+    if (data.length < 100) break;
+    cursor = data[data.length - 1].id;
+  }
+  return allUsers;
+};
+
+// Get all Letta agents for a persona across ALL user profiles
+const getAllPersonaAgents = async (contactId) => {
+  const prefix = `persona_${contactId.replace(/[^a-zA-Z0-9_-]/g, '_')}_user_`;
+  const users = await getAllLettaUsers();
+  const allAgents = [];
+  for (const user of users) {
+    try {
+      const res = await fetch(`${SERVER_URL}/v1/agents`, {
+        headers: { 'x-user-id': user.id }
+      });
+      if (!res.ok) continue;
+      const data = await res.json();
+      const agents = Array.isArray(data) ? data : (data.agents ?? []);
+      const matching = agents.filter(a => a.name?.startsWith(prefix) && !a.is_deleted);
+      allAgents.push(...matching.map(a => ({ ...a, _lettaUserId: user.id })));
+    } catch (_) { /* skip users with no access */ }
+  }
+  return allAgents;
+};
+
+// Get the most recently active agent for a persona across all profiles (to seed from)
+const getLatestPersonaAgent = async (contactId) => {
+  const agents = await getAllPersonaAgents(contactId);
+  return agents.length > 0 ? agents[agents.length - 1] : null;
+};
+
+// Read the persona memory block from a specific agent
+const getAgentPersonaBlock = async (agentId, lettaUserId = null) => {
+  const headers = {};
+  if (lettaUserId) headers['x-user-id'] = lettaUserId;
+  const res = await fetch(`${SERVER_URL}/v1/agents/${agentId}`, { headers });
+  if (!res.ok) return null;
+  const agent = await res.json();
+  return (agent.memory?.blocks || agent.memory_blocks || []).find(b => b.label === 'persona')?.value || null;
+};
+
+/**
+ * After a message exchange, sync the updated persona memory block
+ * from the current agent to all sibling agents (same persona, other profiles).
+ * Call this fire-and-forget — do NOT await in the hot path.
+ */
+export const syncPersonaMemory = async (contact, sourceAgentId, sourceLettaUserId) => {
+  try {
+    const personaValue = await getAgentPersonaBlock(sourceAgentId, sourceLettaUserId);
+    if (!personaValue) return;
+
+    const allAgents = await getAllPersonaAgents(contact.id);
+    const others = allAgents.filter(a => a.id !== sourceAgentId);
+    if (others.length === 0) return;
+
+    console.log(`[LettaService] Syncing persona memory to ${others.length} sibling agent(s) for "${contact.name}"`);
+    for (const agent of others) {
+      try {
+        await fetch(`${SERVER_URL}/v1/agents/${agent.id}/core-memory/blocks/persona`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', 'x-user-id': agent._lettaUserId },
+          body: JSON.stringify({ value: personaValue })
+        });
+      } catch (e) {
+        console.warn(`[LettaService] Failed to sync persona to agent ${agent.id}:`, e);
+      }
+    }
+    console.log(`[LettaService] Persona memory sync done for "${contact.name}"`);
+  } catch (e) {
+    console.error('[LettaService] syncPersonaMemory failed:', e);
+  }
+};
+
 
 export const sendMessageToAgent = async (agentId, messageText, onChunk, signal, activeUser, sessionId = null, parentMessageId = null) => {
   const extraHeaders = {};
