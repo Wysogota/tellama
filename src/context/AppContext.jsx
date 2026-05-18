@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import db, { initDatabase } from '../db/DatabaseBridge.js';
 import { runMigrations } from '../db/migrations.js';
 import * as queries from '../db/queries.js';
+import { markAllMessagesPending } from '../db/queries.js';
 import * as sync from '../sync/SyncManager.js';
 
 
@@ -704,6 +705,18 @@ export const AppProvider = ({ children }) => {
 
   const isGlobalGenerating = (chatId) => !!abortControllersRef.current[chatId];
 
+  /**
+   * Force re-push ALL local messages to the server.
+   * Use this to recover from sync issues where messages got stuck as 'synced'
+   * on the originating device but never actually reached the server.
+   */
+  const repairSync = async () => {
+    console.log('[AppContext] repairSync: marking all messages as pending and pushing...');
+    await markAllMessagesPending();
+    await sync.syncPush(SERVER_URL);
+    console.log('[AppContext] repairSync: done');
+  };
+
   // Per-chat streaming text (for showing typing bubble for background spontaneous messages)
   const [streamingMessages, setStreamingMessages] = useState({});
 
@@ -748,7 +761,7 @@ export const AppProvider = ({ children }) => {
       addPersona, updatePersona, deletePersona, startChat, deleteChat, renameChat,
       addUserProfile, updateUserProfile, deleteUserProfile,
       addMessage, updateMessage, updateMessageMetadata, setFullMessageContent, deleteMessageNode, switchBranch, updateSettings,
-      getNewAbortSignal, clearGeneration, isGlobalGenerating,
+      getNewAbortSignal, clearGeneration, isGlobalGenerating, repairSync,
       streamingMessages, setStreamingMessage, clearStreamingMessage
     }}>
       {children}

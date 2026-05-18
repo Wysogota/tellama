@@ -106,7 +106,8 @@ const getModelBrandIcon = (modelId) => {
 };
 
 const SettingsPanel = ({ onBack }) => {
-  const { settings, updateSettings, personas, messages } = useAppContext();
+  const { settings, updateSettings, personas, messages, repairSync } = useAppContext();
+  const [repairStatus, setRepairStatus] = useState(null); // null | 'working' | 'done'
   const [localSettings, setLocalSettings] = useState({ ...settings });
   const [tooltipParam, setTooltipParam] = useState(null);
   // Stores the defaultParams of the currently selected model for "Reset to defaults"
@@ -854,12 +855,27 @@ const SettingsPanel = ({ onBack }) => {
 
       </div>
 
-      <div className="p-4 bg-[var(--tg-bg-color)] flex-shrink-0">
+      <div className="p-4 bg-[var(--tg-bg-color)] flex-shrink-0 flex flex-col gap-2">
         <button
           onClick={handleExport}
           className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-[var(--tg-border-color)] hover:bg-[var(--tg-secondary-bg-color)] transition-all text-[var(--tg-text-color)] text-[14px] font-medium"
         >
           <Download size={18} /> Export Data
+        </button>
+        <button
+          onClick={async () => {
+            setRepairStatus('working');
+            await repairSync();
+            setRepairStatus('done');
+            setTimeout(() => setRepairStatus(null), 3000);
+          }}
+          disabled={repairStatus === 'working'}
+          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-[var(--tg-border-color)] hover:bg-[var(--tg-secondary-bg-color)] transition-all text-[var(--tg-hint-color)] text-[13px] font-medium disabled:opacity-50"
+        >
+          {repairStatus === 'working' ? <Loader2 size={16} className="animate-spin" /> :
+           repairStatus === 'done' ? <Check size={16} className="text-green-500" /> :
+           <RotateCcw size={16} />}
+          {repairStatus === 'working' ? 'Syncing...' : repairStatus === 'done' ? 'Sync Complete' : 'Repair Sync'}
         </button>
       </div>
     </div>

@@ -297,6 +297,16 @@ export async function upsertBranchState(sessionId, parentMsgId, activeIdx) {
   );
 }
 
+/**
+ * Mark ALL messages and branch states as pending so they get re-pushed on the next sync.
+ * Use this as a "Repair Sync" recovery tool when messages got stuck in synced state
+ * without actually reaching the server.
+ */
+export async function markAllMessagesPending() {
+  await db.exec(`UPDATE messages SET sync_status='pending'`);
+  await db.exec(`UPDATE session_branch_state SET sync_status='pending'`);
+}
+
 // ─── Sync Metadata ────────────────────────────────────────────────────────────
 
 export async function getSyncMeta(key) {

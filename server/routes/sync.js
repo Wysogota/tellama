@@ -73,23 +73,16 @@ router.post('/push', (req, res) => {
         const isDeleted = db.prepare("SELECT 1 FROM deleted_records WHERE id = ? AND table_name = 'messages'").get(data.id);
         if (!isDeleted) {
           const role = data.role ?? 'user';
-          // Dedup: if server already persisted a non-user reply with this parent_message_id,
-          // acknowledge the client push without inserting a duplicate.
-          const serverAlreadyHasReply = role !== 'user' && data.parent_message_id &&
-            db.prepare(
-              `SELECT 1 FROM messages WHERE session_id = ? AND role != 'user' AND parent_message_id = ? AND id != ?`
-            ).get(data.session_id, data.parent_message_id, data.id);
-
-          if (!serverAlreadyHasReply) {
-            db.prepare(`INSERT INTO messages (id, session_id, role, content, parent_message_id, created_at, updated_at, metadata)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                        ON CONFLICT(id) DO UPDATE SET content=excluded.content, updated_at=excluded.updated_at, metadata=excluded.metadata
-                        WHERE excluded.updated_at > messages.updated_at`)
-              .run(data.id, data.session_id, role, data.content ?? '', data.parent_message_id ?? null, data.created_at, data.updated_at, data.metadata ?? '{}');
-          }
+          // Multiple messages with the same parent_message_id are valid (regeneration branches).
+          // ON CONFLICT(id) handles true duplicates (same message pushed twice).
+          db.prepare(`INSERT INTO messages (id, session_id, role, content, parent_message_id, created_at, updated_at, metadata)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                      ON CONFLICT(id) DO UPDATE SET content=excluded.content, updated_at=excluded.updated_at, metadata=excluded.metadata
+                      WHERE excluded.updated_at > messages.updated_at`)
+            .run(data.id, data.session_id, role, data.content ?? '', data.parent_message_id ?? null, data.created_at, data.updated_at, data.metadata ?? '{}');
           syncedIds.messages.push(data.id);
         } else {
-          syncedIds.messages.push(data.id);
+          syncedIds.messages.push(data.id); // acknowledge tombstoned so client stops retrying
         }
       }
 
