@@ -79,6 +79,9 @@ router.use(async (req, res) => {
       // Buffer assistant_message content while forwarding the stream to the client
       let assistantContent = '';
       const decoder = new TextDecoder('utf-8');
+      let clientDisconnected = false;
+
+      res.on('close', () => { clientDisconnected = true; });
 
       notifyClients({ type: 'stream_start', sessionId });
 
@@ -104,7 +107,13 @@ router.use(async (req, res) => {
 
       nodeStream.on('end', () => {
         if (!res.writableEnded) res.end();
-        if (assistantContent) persistAssistantMessage(sessionId, parentMessageId, assistantContent);
+        // Only persist server-side when the client disconnected before the stream ended.
+        // If the client is still connected it calls addMessage → syncPush itself.
+        // clientDisconnected is set by res.on('close') which fires when the TCP socket drops
+        // (NOT when we call res.end() — that fires in a later event-loop tick, after this check).
+        if (clientDisconnected && assistantContent) {
+          persistAssistantMessage(sessionId, parentMessageId, assistantContent);
+        }
         notifyClients({ type: 'stream_end', sessionId });
       });
 
