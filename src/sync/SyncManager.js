@@ -131,7 +131,9 @@ export async function syncPull(serverUrl) {
     
     console.log(`[SyncManager] Pulling updates since ${lastPullAt}...`);
     
-    const response = await fetch(`${serverUrl}/sync/pull?since=${lastPullAt}&deviceId=${deviceId}`);
+    const response = await fetch(`${serverUrl}/sync/pull?since=${lastPullAt}&deviceId=${deviceId}`, {
+      cache: 'no-store'
+    });
     if (response.ok) {
       const { records, timestamp } = await response.json();
       
@@ -269,8 +271,21 @@ export function startSync(serverUrl, onPullComplete = null, intervalMs = 60000, 
   };
   syncInterval = setInterval(fallbackSync, intervalMs);
 
+  const handleVisibilityChange = async () => {
+    if (document.visibilityState === 'visible') {
+      console.log('[SyncManager] App became visible, triggering sync...');
+      await syncPush(serverUrl);
+      const hasUpdates = await syncPull(serverUrl);
+      if (hasUpdates && onPullComplete) {
+        try { await onPullComplete(); } catch (e) { console.warn('[SyncManager] visibility onPullComplete error:', e.message); }
+      }
+    }
+  };
+  document.addEventListener('visibilitychange', handleVisibilityChange);
+
   return () => {
     clearInterval(syncInterval);
+    document.removeEventListener('visibilitychange', handleVisibilityChange);
     disconnectWebSocket();
   };
 }

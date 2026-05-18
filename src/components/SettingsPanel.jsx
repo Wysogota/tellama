@@ -136,17 +136,25 @@ const SettingsPanel = ({ onBack }) => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Sync remote or context-level settings changes into local state
   useEffect(() => {
-    setLocalSettings(prev => ({ ...prev, theme: settings.theme }));
-  }, [settings.theme]);
-
-  useEffect(() => {
-    setLocalSettings(prev => ({ ...prev, accentColor: settings.accentColor }));
-  }, [settings.accentColor]);
-
-  useEffect(() => {
-    setLocalSettings(prev => ({ ...prev, bgIntensity: settings.bgIntensity }));
-  }, [settings.bgIntensity]);
+    setLocalSettings(prev => {
+      const next = { ...prev };
+      let changed = false;
+      const keysToSync = [
+        'theme', 'accentColor', 'bgIntensity', 'provider', 'modelName', 'host', 'freeModelsOnly',
+        'model_llamacpp', 'model_openrouter', 'model_nvidia', 'model_mistral',
+        'temperature', 'top_p', 'top_k', 'max_tokens', 'repeat_penalty'
+      ];
+      for (const key of keysToSync) {
+        if (settings[key] !== undefined && settings[key] !== prev[key]) {
+          next[key] = settings[key];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [settings]);
 
   useEffect(() => {
     Promise.all([
@@ -197,7 +205,16 @@ const SettingsPanel = ({ onBack }) => {
   }, [localSettings.provider]);
 
   // Debounce effect for text settings
+  const previousSettingsRef = useRef(settings);
+
   useEffect(() => {
+    // If the settings object changed from the outside, we shouldn't push localSettings immediately.
+    // We update previousSettingsRef and return, allowing the sync useEffect above to update localSettings.
+    if (settings !== previousSettingsRef.current) {
+      previousSettingsRef.current = settings;
+      return;
+    }
+
     const timer = setTimeout(() => {
       const changed = {};
       const keysToSync = ['modelName', 'host', 'bgIntensity', 'accentColor', 'provider', 'freeModelsOnly', 'model_llamacpp', 'model_openrouter', 'model_nvidia', 'model_mistral',
@@ -211,6 +228,8 @@ const SettingsPanel = ({ onBack }) => {
 
       if (Object.keys(changed).length > 0) {
         updateSettings(changed);
+        // Optimistically update the ref so we don't ignore our own changes
+        previousSettingsRef.current = { ...settings, ...changed };
       }
     }, 500);
 

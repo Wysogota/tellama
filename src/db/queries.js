@@ -103,7 +103,7 @@ export async function applyProfileFromServer(profile) {
        personal_info=excluded.personal_info,
        updated_at=excluded.updated_at,
        sync_status='synced'
-     WHERE excluded.updated_at > user_profiles.updated_at`,
+     WHERE sync_status = 'synced' OR excluded.updated_at > user_profiles.updated_at`,
     [r.id, r.name, r.personal_info, r.created_at, serverUpdatedAt]
   );
 }
@@ -153,7 +153,7 @@ export async function applyPersonaFromServer(persona) {
        personal_info=excluded.personal_info,
        updated_at=excluded.updated_at,
        sync_status='synced'
-     WHERE excluded.updated_at > personas.updated_at`,
+     WHERE sync_status = 'synced' OR excluded.updated_at > personas.updated_at`,
     [r.id, r.name, r.personal_info, r.created_at, serverUpdatedAt]
   );
 }
@@ -193,7 +193,7 @@ export async function applySessionFromServer(session) {
     `INSERT INTO chat_sessions (id, user_profile_id, persona_id, name, created_at, updated_at, sync_status)
      VALUES (?, ?, ?, ?, ?, ?, 'synced')
      ON CONFLICT(id) DO UPDATE SET name=excluded.name, updated_at=excluded.updated_at, sync_status='synced'
-     WHERE excluded.updated_at > chat_sessions.updated_at`,
+     WHERE sync_status = 'synced' OR excluded.updated_at > chat_sessions.updated_at`,
     [session.id, session.userProfileId, session.personaId, session.name || null, session.createdAt, session.updatedAt]
   );
 }
@@ -343,7 +343,7 @@ export async function applySettingFromServer(key, value, updatedAt) {
     `INSERT INTO app_settings (key, value, updated_at, sync_status)
      VALUES (?, ?, ?, 'synced')
      ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at, sync_status='synced'
-     WHERE excluded.updated_at > app_settings.updated_at`,
+     WHERE sync_status = 'synced' OR excluded.updated_at > app_settings.updated_at`,
     [key, value, updatedAt]
   );
 }
@@ -464,7 +464,7 @@ export async function applyMessageFromServer(msg) {
     `INSERT INTO messages (id, session_id, role, content, parent_message_id, created_at, updated_at, metadata, sync_status)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'synced')
      ON CONFLICT(id) DO UPDATE SET content=excluded.content, updated_at=excluded.updated_at, metadata=excluded.metadata, sync_status='synced'
-     WHERE excluded.updated_at > messages.updated_at`,
+     WHERE sync_status = 'synced' OR excluded.updated_at > messages.updated_at`,
     [msg.id, msg.sessionId, msg.sender === 'user' ? 'user' : 'assistant', msg.content, msg.parentId ?? null, msg.timestamp, msg.updatedAt || msg.timestamp, metadata]
   );
 }
