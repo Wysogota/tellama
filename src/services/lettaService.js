@@ -282,10 +282,14 @@ export const resetAllPersonaAgents = async () => {
   console.log('[LettaService] Done. Agents will be recreated on next message.');
 };
 
-export const sendMessageToAgent = async (agentId, messageText, onChunk, signal, activeUser) => {
+export const sendMessageToAgent = async (agentId, messageText, onChunk, signal, activeUser, sessionId = null, parentMessageId = null) => {
+  const extraHeaders = {};
+  if (sessionId) extraHeaders['x-session-id'] = sessionId;
+  if (parentMessageId) extraHeaders['x-parent-message-id'] = parentMessageId;
+
   const response = await fetchLetta(`${SERVER_URL}/v1/agents/${agentId}/messages/stream`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...extraHeaders },
     body: JSON.stringify({
       messages: [{ role: 'user', content: messageText }]
     }),

@@ -215,7 +215,7 @@ const ChatArea = ({ onOpenModelInfo }) => {
         botResponseText += chunk;
         setStreamingText(botResponseText);
         scrollToBottom();
-      }, false, signal, isRegeneration);
+      }, false, signal, isRegeneration, activeChatId, parentNodeId);
       stats = result.stats;
 
       if (stats && stats.promptTokens) {

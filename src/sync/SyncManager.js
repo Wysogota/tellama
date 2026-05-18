@@ -40,6 +40,8 @@ function connectWebSocket() {
         if (hasUpdates && _wsOnInvalidate) {
           await _wsOnInvalidate();
         }
+      } else if (msg.type === 'letta_request') {
+        console.log('%c[Letta → Provider Request]', 'color: #10b981; font-weight: bold; font-size: 11px;', msg.data);
       }
     } catch (e) {
       console.warn('[SyncManager WS] Message parse error:', e.message);

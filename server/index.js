@@ -4,8 +4,8 @@ import { createServer } from 'http';
 import { WebSocketServer } from 'ws';
 import { runServerMigrations } from './migrations.js';
 import syncRouter, { setNotifyClients } from './routes/sync.js';
-import llmRouter from './routes/llm.js';
-import lettaRouter from './routes/letta.js';
+import llmRouter, { setNotifyClients as setNotifyClientsLLM } from './routes/llm.js';
+import lettaRouter, { setNotifyClients as setNotifyClientsLetta } from './routes/letta.js';
 
 import * as dotenv from 'dotenv';
 dotenv.config();
@@ -40,8 +40,10 @@ wss.on('connection', (ws) => {
   ws.on('error', (e) => console.error('[WS] Error:', e.message));
 });
 
-// Give the sync router a reference to the notifyClients function
+// Give the routers a reference to the notifyClients function
 setNotifyClients(notifyClients);
+setNotifyClientsLLM(notifyClients);
+setNotifyClientsLetta(notifyClients);
 
 // Run migrations on start
 runServerMigrations();

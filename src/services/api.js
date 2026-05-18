@@ -1,7 +1,8 @@
 import { createAgent, sendMessageToAgent } from './lettaService.js';
 
 export const generateChatResponse = async (
-  settings, contact, activeUser, messages, onChunk, isSpontaneous = false, signal = null, isRegeneration = false
+  settings, contact, activeUser, messages, onChunk, isSpontaneous = false, signal = null, isRegeneration = false,
+  sessionId = null, parentMessageId = null
 ) => {
   const startTime = performance.now();
 
@@ -51,7 +52,7 @@ export const generateChatResponse = async (
     const finalMessageText = `[Current System Time: ${currentTime}]\n${messageText}`;
 
     // 3. Send message to Letta Agent and stream response
-    const { content, stats } = await sendMessageToAgent(agentId, finalMessageText, onChunk, signal, activeUser);
+    const { content, stats } = await sendMessageToAgent(agentId, finalMessageText, onChunk, signal, activeUser, sessionId, parentMessageId);
 
     const durationMs = performance.now() - startTime;
     return {

@@ -4,6 +4,11 @@ import db from '../db.js';
 
 const router = express.Router();
 
+let notifyClients = () => {};
+export function setNotifyClients(fn) {
+  notifyClients = fn;
+}
+
 const PROVIDER_CONFIGS = {
   openrouter: {
     baseUrl: 'https://openrouter.ai/api/v1',
@@ -197,6 +202,29 @@ router.post('/proxy/:provider/chat/completions', async (req, res) => {
         })
       : messages;
 
+    const requestBody = {
+      model: realModel || undefined,
+      messages: sanitizedMessages,
+      stream: req.body.stream ?? false,
+      temperature: req.body.temperature ?? ACTIVE_PARAMS.temperature,
+      top_p: req.body.top_p ?? ACTIVE_PARAMS.top_p,
+      max_tokens: req.body.max_tokens ?? ACTIVE_PARAMS.max_tokens,
+      ...(baseProvider === 'llamacpp' ? {
+        top_k: req.body.top_k ?? ACTIVE_PARAMS.top_k,
+        repeat_penalty: req.body.repeat_penalty ?? ACTIVE_PARAMS.repeat_penalty,
+      } : {}),
+    };
+
+    // Notify clients about the request Letta is sending
+    notifyClients({
+      type: 'letta_request',
+      data: {
+        provider: baseProvider,
+        url: upstreamUrl,
+        body: requestBody
+      }
+    });
+
     const upstream = await fetch(upstreamUrl, {
       method: 'POST',
       headers: {
@@ -204,19 +232,7 @@ router.post('/proxy/:provider/chat/completions', async (req, res) => {
         'Authorization': `Bearer ${apiKey}`,
         ...config.extraHeaders,
       },
-      body: JSON.stringify({
-        model: realModel || undefined,
-        messages: sanitizedMessages,
-        stream: req.body.stream ?? false,
-        temperature: req.body.temperature ?? ACTIVE_PARAMS.temperature,
-        top_p: req.body.top_p ?? ACTIVE_PARAMS.top_p,
-        max_tokens: req.body.max_tokens ?? ACTIVE_PARAMS.max_tokens,
-        // llamacpp-specific params (ignored by cloud providers)
-        ...(baseProvider === 'llamacpp' ? {
-          top_k: req.body.top_k ?? ACTIVE_PARAMS.top_k,
-          repeat_penalty: req.body.repeat_penalty ?? ACTIVE_PARAMS.repeat_penalty,
-        } : {}),
-      }),
+      body: JSON.stringify(requestBody),
       signal: abortController.signal,
     });
 
