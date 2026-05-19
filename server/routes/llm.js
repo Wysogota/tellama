@@ -31,6 +31,12 @@ const PROVIDER_CONFIGS = {
       'Accept': 'text/event-stream',
     },
   },
+  gemini: {
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    extraHeaders: {
+      'Accept': 'text/event-stream',
+    },
+  },
   llamacpp: {
     baseUrl: 'http://127.0.0.1:8080/v1',
     extraHeaders: {},
@@ -141,7 +147,7 @@ router.post('/proxy/:provider/chat/completions', async (req, res) => {
 
   const config = PROVIDER_CONFIGS[baseProvider];
   if (!config) {
-    return res.status(400).json({ error: `Unknown provider "${baseProvider}". Use llamacpp, openrouter, nvidia, or mistral.` });
+    return res.status(400).json({ error: `Unknown provider "${baseProvider}". Use llamacpp, openrouter, nvidia, mistral, or gemini.` });
   }
 
   // Read key — if missing, tell the user clearly
@@ -175,7 +181,7 @@ router.post('/proxy/:provider/chat/completions', async (req, res) => {
     // Mistral (and some other providers) strictly forbid extra fields in message objects.
     // Letta can inject `reasoning_content` and other non-standard fields into assistant
     // messages when using thinking/chain-of-thought models. Strip them here.
-    const STRICT_PROVIDERS = new Set(['mistral']);
+    const STRICT_PROVIDERS = new Set(['mistral', 'gemini']);
     const ALLOWED_MSG_FIELDS = { role: 1, content: 1, name: 1, tool_calls: 1, tool_call_id: 1 };
     const sanitizedMessages = STRICT_PROVIDERS.has(baseProvider)
       ? messages.map(msg => {
@@ -295,6 +301,9 @@ router.get('/proxy/:provider/models', (req, res) => {
       { id: 'openai/gpt-3.5-turbo', object: 'model', created: 1677610602, owned_by: 'openai' },
       { id: 'gpt-4o', object: 'model', created: 1677610602, owned_by: 'openai' },
       { id: 'openai/gpt-4o', object: 'model', created: 1677610602, owned_by: 'openai' },
+      { id: 'gemini-1.5-flash', object: 'model', created: 1677610602, owned_by: 'google' },
+      { id: 'gemini-2.0-flash', object: 'model', created: 1677610602, owned_by: 'google' },
+      { id: 'gemini-2.5-flash', object: 'model', created: 1677610602, owned_by: 'google' },
       { id: 'mistralai/mistral-nemotron', object: 'model', created: 1677610602, owned_by: 'openrouter' },
       { id: 'test-model', object: 'model', created: 1677610602, owned_by: 'test' }
     ]
@@ -335,6 +344,7 @@ const getModelDefaults = (id, contextLength) => {
 
   // ── Model-family detection ─────────────────────────────────────────────────
   if (s.includes('gemma'))                      return { temperature: 1.0,  top_p: 0.95, max_tokens: maxTok(8192) };
+  if (s.includes('gemini'))                     return { temperature: 1.0,  top_p: 0.95, max_tokens: maxTok(8192) };
   if (s.includes('llama'))                      return { temperature: 0.8,  top_p: 0.9,  max_tokens: maxTok(4096) };
   if (s.includes('claude'))                     return { temperature: 1.0,  top_p: 1.0,  max_tokens: maxTok(8192) };
   if (s.includes('gpt-4') || s.includes('o1') || s.includes('o3') || s.includes('o4'))
@@ -457,6 +467,41 @@ router.get('/models/:provider', async (req, res) => {
           context_length: m.max_context_window || null,
           defaultParams: getModelDefaults(m.id, m.max_context_window),
         }));
+
+      mapped.sort((a, b) => {
+        if (a.isFavorite && !b.isFavorite) return -1;
+        if (!a.isFavorite && b.isFavorite) return 1;
+        return a.name.localeCompare(b.name);
+      });
+      res.json(mapped);
+    } else if (provider === 'gemini') {
+      const keyRow = db.prepare('SELECT key_value FROM api_keys WHERE provider = ?').get('gemini');
+      if (!keyRow) {
+        return res.status(401).json({ error: 'Gemini API key not configured. Add it in Settings first.' });
+      }
+      const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${keyRow.key_value}`);
+      const data = await resp.json();
+
+      const seenIds = new Set();
+      const mapped = (data.models || [])
+        .filter(m => {
+          const id = m.name.replace(/^models\//, '');
+          if (seenIds.has(id)) return false;
+          seenIds.add(id);
+          return m.supportedGenerationMethods?.includes('generateContent');
+        })
+        .map(m => {
+          const id = m.name.replace(/^models\//, '');
+          return {
+            id: id,
+            name: m.displayName || formatModelName(id),
+            isFree: false,
+            isFavorite: isFav(id),
+            link: `https://ai.google.dev/gemini-api/docs/models/gemini`,
+            context_length: m.inputTokenLimit || null,
+            defaultParams: getModelDefaults(id, m.inputTokenLimit),
+          };
+        });
 
       mapped.sort((a, b) => {
         if (a.isFavorite && !b.isFavorite) return -1;
