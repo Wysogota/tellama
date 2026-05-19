@@ -62,6 +62,15 @@ export const AppProvider = ({ children }) => {
         await initDatabase();
         await runMigrations();
 
+        // Perform pre-sync pull to fetch any existing data (profiles, etc.) from the server
+        // before local state initialization. This avoids creating duplicate dummy profiles.
+        try {
+          await sync.syncPull(SERVER_URL);
+        } catch (e) {
+          console.warn('[Init] Pre-sync pull failed:', e.message);
+        }
+
+
         // --- DEBUG: snapshot localStorage at startup ---
         const _lsC = localStorage.getItem('tellama_contacts');
         const _lsP = localStorage.getItem('tellama_user_profiles');

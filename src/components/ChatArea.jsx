@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { Paperclip, SendHorizontal, MoreVertical, Loader2, Edit2, Trash2, RotateCcw, ChevronLeft, ChevronRight, ArrowLeft, CheckCheck, Check, Smile, Mic, Search, X, Calendar, FileText, Image as ImageIcon, XCircle, FileCode, FileType, File, Download, Maximize2, Reply, Copy, Languages, Pin, Forward, CheckCircle2 } from 'lucide-react';
+import { Paperclip, SendHorizontal, MoreVertical, Loader2, Edit2, Trash2, RotateCcw, ChevronLeft, ChevronRight, ArrowLeft, CheckCheck, Check, Smile, Mic, Search, X, Calendar, FileText, Image as ImageIcon, XCircle, FileCode, FileType, File, Download, Maximize2, Reply, Copy, Languages, Pin, Forward, CheckCircle2, ArrowDown } from 'lucide-react';
 import { generateChatResponse } from '../services/api';
 import { requestNotificationPermission, sendNotification } from '../utils/notifications';
 import EmojiPicker, { Theme } from 'emoji-picker-react';
@@ -75,6 +75,7 @@ const ChatArea = ({ onOpenModelInfo }) => {
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [calendarDate, setCalendarDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(new Date());
+  const [showScrollDown, setShowScrollDown] = useState(false);
   
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -117,6 +118,15 @@ const ChatArea = ({ onOpenModelInfo }) => {
       scrollToBottom();
     }
   }, [activeMessages.length, isGenerating]);
+
+  useEffect(() => {
+    if (activeChatId) {
+      scrollToBottom(true);
+      wasAtBottomRef.current = true;
+      setShowScrollDown(false);
+    }
+  }, [activeChatId]);
+
 
   useEffect(() => {
     const handlePopState = (event) => {
@@ -643,7 +653,9 @@ const ChatArea = ({ onOpenModelInfo }) => {
 
     const handleScroll = () => {
       const { scrollTop, scrollHeight, clientHeight } = container;
-      wasAtBottomRef.current = scrollHeight - scrollTop - clientHeight < 100;
+      const isAtBottom = scrollHeight - scrollTop - clientHeight < 100;
+      wasAtBottomRef.current = isAtBottom;
+      setShowScrollDown(!isAtBottom);
     };
 
     const resizeObserver = new ResizeObserver(() => {
@@ -780,7 +792,7 @@ const ChatArea = ({ onOpenModelInfo }) => {
         className="flex-grow overflow-y-auto z-10 custom-scrollbar"
         style={{ overflowAnchor: 'auto' }}
       >
-        <div className="max-w-[720px] mx-auto w-full p-4 flex flex-col space-y-2 messages-list-container">
+        <div className="max-w-[700px] mx-auto w-full p-4 flex flex-col space-y-2 messages-list-container">
           {activeMessages.map((msg, idx) => {
             const prevMsg = activeMessages[idx - 1];
             const msgDate = new Date(msg.timestamp);
@@ -843,9 +855,9 @@ const ChatArea = ({ onOpenModelInfo }) => {
       </div>
 
       <div className="pt-0.5 px-2 pb-1 md:pt-1 md:px-4 md:pb-3 z-10 flex flex-col items-center bg-transparent">
-        <div className="w-full max-w-[720px] flex items-end gap-2 relative">
+        <div className="w-full max-w-[680px] flex items-center gap-2 relative">
           <input type="file" ref={fileInputRef} onChange={handleFileAttach} className="hidden" multiple />
-          <div className="flex-grow flex flex-col bg-[var(--tg-secondary-bg-color)] shadow-md rounded-[24px] relative" ref={emojiPickerRef}>
+          <div className="flex-grow flex flex-col bg-[var(--tg-secondary-bg-color)] rounded-[24px] relative tg-input-bubble-tail" ref={emojiPickerRef}>
             {showEmojiPicker && (
               <div className="absolute bottom-[calc(100%+8px)] left-0 w-[calc(50%+40px)] z-[100] animate-in slide-in-from-bottom-2 fade-in duration-200">
                 <div className="overflow-hidden rounded-[20px] shadow-2xl backdrop-blur-xl bg-[var(--tg-secondary-bg-color)]/95">
@@ -866,15 +878,13 @@ const ChatArea = ({ onOpenModelInfo }) => {
             )}
             <div className={`overflow-hidden transition-all duration-300 ease-in-out ${attachments.length > 0 ? 'max-h-[90px] opacity-100' : 'max-h-0 opacity-0'}`}><div className="flex overflow-x-auto px-2 gap-2 custom-scrollbar pt-2 pb-2">{attachments.map(att => (<div key={att.id} className="flex-shrink-0 relative group"><div onClick={() => setPreviewFile(att)} className="cursor-pointer">{att.previewUrl ? <div className="w-14 h-14 rounded-xl overflow-hidden shadow-sm"><img src={att.previewUrl} className="w-full h-full object-cover" /></div> : <div className="w-14 h-14 rounded-xl bg-[var(--tg-bg-color)] shadow-sm flex flex-col items-center justify-center p-1 text-center">{getFileIcon(att)}<span className="text-[8px] truncate w-full">{att.name}</span></div>}</div><button onClick={(e) => { e.stopPropagation(); removeAttachment(att.id); }} className="absolute -top-1 -right-1 bg-[var(--tg-bg-color)] text-red-500 rounded-full shadow-md w-5 h-5 flex items-center justify-center border opacity-0 group-hover:opacity-100 transition-opacity"><X size={12} /></button></div>))}</div></div>
             {attachments.length > 0 && <div className="mx-8 h-[1px] bg-[var(--tg-border-color)] opacity-40" />}
-            <div className="flex items-end px-2 py-0.5 min-h-[44px]">
-              <div>
-                <button 
-                  onClick={(e) => { e.stopPropagation(); setShowEmojiPicker(!showEmojiPicker); }}
-                  className={`p-2 transition-colors ${showEmojiPicker ? 'text-[var(--tg-link-color)]' : 'text-[var(--tg-hint-color)] hover:text-[var(--tg-link-color)]'}`}
-                >
-                  <Smile size={24} />
-                </button>
-              </div>
+            <div className="flex items-center px-2 py-1 min-h-[48px]">
+              <button 
+                onClick={(e) => { e.stopPropagation(); setShowEmojiPicker(!showEmojiPicker); }}
+                className={`p-2 transition-colors ${showEmojiPicker ? 'text-[var(--tg-link-color)]' : 'text-[var(--tg-hint-color)] hover:text-[var(--tg-link-color)]'}`}
+              >
+                <Smile size={24} />
+              </button>
               <textarea 
                 className="w-full bg-transparent text-[var(--tg-text-color)] py-2.5 px-1 outline-none resize-none max-h-32 text-[16px] leading-tight custom-scrollbar" 
                 placeholder="Message" 
@@ -888,7 +898,19 @@ const ChatArea = ({ onOpenModelInfo }) => {
               </button>
             </div>
           </div>
-          <button onClick={handleSendRobust} className="w-[44px] h-[44px] bg-gradient-to-br from-[var(--tg-link-color)] to-purple-600 text-white rounded-full flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 transition-all flex-shrink-0 mb-0.5">{inputText.trim() || attachments.length > 0 ? <SendHorizontal size={20} fill="currentColor" className="ml-0.5" /> : <Mic size={20} />}</button>
+          <div className="relative flex-shrink-0 flex flex-col items-center">
+            <button 
+              onClick={() => scrollToBottom()}
+              className={`absolute left-1/2 -translate-x-1/2 w-[48px] h-[48px] bg-[var(--tg-secondary-bg-color)] hover:bg-[var(--tg-link-color)] text-[var(--tg-hint-color)] hover:text-white rounded-full flex items-center justify-center z-40 transition-all duration-300 ${
+                showScrollDown 
+                  ? 'bottom-[calc(100%+12px)] opacity-100 scale-100 pointer-events-auto' 
+                  : 'bottom-[calc(100%-20px)] opacity-0 scale-90 pointer-events-none'
+              }`}
+            >
+              <ArrowDown size={20} />
+            </button>
+            <button onClick={handleSendRobust} className="w-[48px] h-[48px] bg-[var(--tg-secondary-bg-color)] text-[var(--tg-hint-color)] hover:bg-[var(--tg-link-color)] hover:text-white rounded-full flex items-center justify-center hover:scale-105 active:scale-95 transition-all flex-shrink-0">{inputText.trim() || attachments.length > 0 ? <SendHorizontal size={20} fill="currentColor" className="ml-0.5" /> : <Mic size={20} />}</button>
+          </div>
         </div>
       </div>
 
