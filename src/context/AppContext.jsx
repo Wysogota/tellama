@@ -552,12 +552,12 @@ export const AppProvider = ({ children }) => {
   };
 
   // Tree Message operations
-  const addMessage = async (chatId, message, parentId = null) => {
+  const addMessage = async (chatId, message, parentId = undefined) => {
     const id = message.id || uuidv4();
     const chatData = messages[chatId] || { nodes: {}, rootId: null, activeChildIndex: {} };
     
     let actualParentId = parentId;
-    if (actualParentId === null) {
+    if (actualParentId === undefined) {
       let curr = chatData.rootId;
       while (curr && chatData.nodes[curr] && chatData.nodes[curr].childrenIds.length > 0) {
         const activeIdx = chatData.activeChildIndex[curr] || 0;
@@ -573,16 +573,12 @@ export const AppProvider = ({ children }) => {
     // Save to SQL (non-fatal: message always added to React state tree)
     try {
       await queries.insertMessage({ ...newNode, sessionId: chatId });
-      if (actualParentId !== null) {
-        const parentNode = chatData.nodes[actualParentId];
-        const currentChildCount = parentNode ? parentNode.childrenIds.length : 0;
-        await queries.upsertBranchState(chatId, actualParentId, currentChildCount);
-      }
     } catch (e) {
       console.error('[addMessage] SQLite failed (message kept in memory/localStorage):', e.message);
     }
 
-    // Update State
+    // Update State using functional form so it always gets the latest state
+    let savedChildCount = 0;
     setMessages(prev => {
       const prevChat = prev[chatId] || { nodes: {}, rootId: null, activeChildIndex: {} };
       const newNodes = { ...prevChat.nodes, [id]: newNode };
@@ -591,16 +587,27 @@ export const AppProvider = ({ children }) => {
 
       if (actualParentId === null) {
         newRootId = id;
+        const rootSiblingsCount = Object.values(newNodes).filter(n => n.parentId === null).length;
+        savedChildCount = Math.max(0, rootSiblingsCount - 1);
+        newActiveChildIndex[null] = savedChildCount;
       } else if (newNodes[actualParentId]) {
+        const parentChildren = [...(newNodes[actualParentId].childrenIds || [])];
+        savedChildCount = parentChildren.length; // Count BEFORE adding new child
         newNodes[actualParentId] = {
           ...newNodes[actualParentId],
-          childrenIds: [...newNodes[actualParentId].childrenIds, id]
+          childrenIds: [...parentChildren, id]
         };
         newActiveChildIndex[actualParentId] = newNodes[actualParentId].childrenIds.length - 1;
       }
 
       return { ...prev, [chatId]: { nodes: newNodes, rootId: newRootId, activeChildIndex: newActiveChildIndex } };
     });
+    
+    // Persist branch state AFTER updating state (using fresh count computed in setMessages)
+    await queries.upsertBranchState(chatId, actualParentId, savedChildCount).catch(e => {
+      console.warn('[addMessage] upsertBranchState failed:', e.message);
+    });
+    
     sync.syncPush(SERVER_URL).catch(e => console.warn('[addMessage] Immediate push failed:', e.message));
     return id;
   };
@@ -608,7 +615,8 @@ export const AppProvider = ({ children }) => {
   const updateMessage = async (chatId, messageId, contentDelta) => {
     const chatData = messages[chatId];
     if (!chatData || !chatData.nodes[messageId]) return;
-    const newContent = chatData.nodes[messageId].content + contentDelta;
+    // Accept either a plain string or { content: '...' }
+    const newContent = typeof contentDelta === 'string' ? contentDelta : contentDelta.content;
     await queries.updateMessageContent(messageId, newContent);
 
     setMessages(prev => ({
@@ -656,13 +664,19 @@ export const AppProvider = ({ children }) => {
     setMessages(prev => {
       const chat = prev[chatId];
       if (!chat || !chat.nodes[messageId]) return prev;
+      const node = chat.nodes[messageId];
+      const { letta_id, ...statsPart } = metadata;
       return {
         ...prev,
         [chatId]: {
           ...chat,
           nodes: {
             ...chat.nodes,
-            [messageId]: { ...chat.nodes[messageId], stats: metadata }
+            [messageId]: { 
+              ...node, 
+              stats: { ...node.stats, ...statsPart },
+              metadata: letta_id ? { letta_id } : (node.metadata || {})
+            }
           }
         }
       };

@@ -19,6 +19,7 @@ PATCHED_FILES=(
   "letta/adapters/simple_llm_stream_adapter.py"
   "letta/adapters/letta_llm_request_adapter.py"
   "letta/adapters/letta_llm_stream_adapter.py"
+  "letta/server/rest_api/routers/v1/messages.py"
 )
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

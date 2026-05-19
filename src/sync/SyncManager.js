@@ -42,7 +42,8 @@ function connectWebSocket() {
           await _wsOnInvalidate();
         }
       } else if (msg.type === 'letta_request') {
-        console.log('%c[Letta → Provider Request]', 'color: #10b981; font-weight: bold; font-size: 11px;', msg.data);
+        const intentText = msg.data.intent ? ` [${msg.data.intent}]` : '';
+        console.log(`%c[Letta → Provider Request]${intentText}`, 'color: #10b981; font-weight: bold; font-size: 11px;', msg.data);
       } else if (['stream_start', 'stream_chunk', 'stream_end'].includes(msg.type)) {
         if (_wsOnStreamEvent) _wsOnStreamEvent(msg.type, msg.sessionId, msg.content);
       }

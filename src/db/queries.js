@@ -239,7 +239,8 @@ export async function getBranchStateForSession(sessionId) {
 
 export async function insertMessage(msg) {
   const t = msg.timestamp || now();
-  const metadata = JSON.stringify(msg.stats || msg.metadata || {});
+  // Merge stats and metadata so letta_id (and other metadata) is preserved
+  const metadata = JSON.stringify({ ...(msg.stats || {}), ...(msg.metadata || {}) });
   await db.exec(
     `INSERT OR IGNORE INTO messages (id, session_id, role, content, parent_message_id, created_at, updated_at, metadata, sync_status)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
@@ -256,7 +257,11 @@ export async function updateMessageContent(msgId, content) {
 }
 
 export async function updateMessageMetadata(id, metadata) {
-  const metaStr = JSON.stringify(metadata);
+  // Merge with existing metadata to avoid overwriting letta_id when updating stats or vice versa
+  const existing = await db.query('SELECT metadata FROM messages WHERE id = ?', [id]);
+  const existingMeta = existing.rows?.[0]?.metadata ? JSON.parse(existing.rows[0].metadata) : {};
+  const merged = { ...existingMeta, ...metadata };
+  const metaStr = JSON.stringify(merged);
   const t = now();
   await db.exec(
     "UPDATE messages SET metadata=?, updated_at=?, sync_status='pending' WHERE id=?",
@@ -370,6 +375,8 @@ export function buildMessageTree(msgRows, branchRows) {
 
   // Build nodes map (childrenIds will be filled below)
   for (const row of msgRows) {
+    const parsed = JSON.parse(row.metadata || '{}');
+    const { letta_id, ...stats } = parsed;
     nodes[row.id] = {
       id: row.id,
       parentId: row.parent_message_id ?? null,
@@ -377,7 +384,8 @@ export function buildMessageTree(msgRows, branchRows) {
       sender: row.role === 'user' ? 'user' : 'bot',
       content: row.content,
       timestamp: row.created_at,
-      stats: JSON.parse(row.metadata || '{}'),
+      stats,
+      metadata: letta_id ? { letta_id } : {},
     };
     if (!row.parent_message_id) rootId = row.id;
   }

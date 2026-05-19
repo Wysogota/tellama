@@ -1,7 +1,7 @@
 import { createAgent, sendMessageToAgent, syncPersonaMemory } from './lettaService.js';
 
 export const generateChatResponse = async (
-  settings, contact, activeUser, messages, onChunk, isSpontaneous = false, signal = null, isRegeneration = false,
+  settings, contact, activeUser, messages, onChunk, isSpontaneous = false, signal = null,
   sessionId = null, parentMessageId = null
 ) => {
   const startTime = performance.now();
@@ -31,9 +31,6 @@ export const generateChatResponse = async (
       const lastMessage = messages[messages.length - 1];
       if (lastMessage.sender === 'user') {
         messageText = lastMessage.content;
-        if (isRegeneration) {
-          messageText += "\n\n[CRITICAL SYSTEM DIRECTIVE: The user is regenerating the response. You MUST provide a completely new and fresh answer. You are STRICTLY FORBIDDEN from acknowledging that this is a second attempt. Do NOT say things like 'Let me try again', 'Ah, then another masterpiece', or 'Sorry about that'. Pretend the previous response NEVER happened. Respond natively and perfectly in character as if hearing this for the very first time.]";
-        }
       }
     }
 
@@ -45,14 +42,14 @@ export const generateChatResponse = async (
       throw new Error("No user message found to send to Letta.");
     }
 
-    const currentTime = new Date().toLocaleString('en-US', { 
-      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', 
+    const currentTime = new Date().toLocaleString('en-US', {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
       hour: '2-digit', minute: '2-digit', second: '2-digit'
     });
     const finalMessageText = `[Current System Time: ${currentTime}]\n${messageText}`;
 
     // 3. Send message to Letta Agent and stream response
-    const { content, stats } = await sendMessageToAgent(agentId, finalMessageText, onChunk, signal, activeUser, sessionId, parentMessageId);
+    const { content, stats, userMessageId, assistantMessageId } = await sendMessageToAgent(agentId, finalMessageText, onChunk, signal, activeUser, sessionId, parentMessageId);
 
     // 4. Fire-and-forget: sync updated persona memory to all sibling agents (other profiles)
     syncPersonaMemory(contact, agentId).catch(e => console.warn('[API] Persona memory sync error:', e));
@@ -60,7 +57,9 @@ export const generateChatResponse = async (
     const durationMs = performance.now() - startTime;
     return {
       content,
-      stats: { ...stats, durationMs }
+      stats: { ...stats, durationMs },
+      userMessageId,
+      assistantMessageId
     };
 
   } catch (error) {
@@ -73,3 +72,4 @@ export const fetchModelInfo = async (settings) => {
   // Letta handles the model internally. We just surface the configured provider setting.
   return { provider: 'letta', model: settings.modelName || 'Letta Agent' };
 };
+export { deleteMessageInLetta, updateMessageInLetta } from './lettaService.js';

@@ -407,6 +407,9 @@ export const sendMessageToAgent = async (agentId, messageText, onChunk, signal, 
   const decoder = new TextDecoder('utf-8');
   let done = false;
   let fullResponse = '';
+  let userMessageId = null;
+  let assistantMessageId = null;
+  let assistantStepId = null;
 
   while (!done) {
     const { value, done: readerDone } = await reader.read();
@@ -437,6 +440,8 @@ export const sendMessageToAgent = async (agentId, messageText, onChunk, signal, 
           throw new Error(`Letta Agent Error: ${data.message || data.error_type} - ${data.detail || ''}`);
         }
         if (data.message_type === 'assistant_message' && data.content) {
+          if (data.id) assistantMessageId = data.id;
+          if (data.step_id) assistantStepId = data.step_id;
           fullResponse += data.content;
           if (onChunk) onChunk(data.content);
         } else if (data.choices?.[0]?.delta?.content) {
@@ -450,8 +455,46 @@ export const sendMessageToAgent = async (agentId, messageText, onChunk, signal, 
     }
   }
 
+  // After stream: fetch the user_message that was created in the same step
+  // Letta SSE doesn't emit user_message events, so we look it up by step_id
+  if (assistantStepId && !userMessageId) {
+    try {
+      const recentRes = await fetchLetta(`${SERVER_URL}/v1/messages/?limit=20`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
+      }, activeUser);
+      if (recentRes.ok) {
+        const recentMsgs = await recentRes.json();
+        const userMsg = recentMsgs.find(m => m.step_id === assistantStepId && m.message_type === 'user_message');
+        if (userMsg) userMessageId = userMsg.id;
+      }
+    } catch (e) {
+      console.warn('[Letta] Could not fetch user_message ID after stream:', e.message);
+    }
+  }
+
   return {
     content: fullResponse,
-    stats: { model: 'letta_agent' }
+    stats: { model: 'letta_agent' },
+    userMessageId,
+    assistantMessageId
   };
+};
+
+export const updateMessageInLetta = async (lettaMessageId, newContent, activeUser, role = 'assistant') => {
+  const response = await fetchLetta(`${SERVER_URL}/v1/messages/${lettaMessageId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ role, content: newContent })
+  }, activeUser);
+  if (!response.ok) throw new Error(`Letta API error: ${response.status}`);
+  return response.json();
+};
+
+export const deleteMessageInLetta = async (lettaMessageId, activeUser) => {
+  const response = await fetchLetta(`${SERVER_URL}/v1/messages/${lettaMessageId}`, {
+    method: 'DELETE'
+  }, activeUser);
+  if (!response.ok) throw new Error(`Letta API error: ${response.status}`);
+  return response.json();
 };

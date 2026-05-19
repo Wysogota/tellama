@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { Paperclip, SendHorizontal, MoreVertical, Loader2, Edit2, Trash2, RotateCcw, ChevronLeft, ChevronRight, ArrowLeft, CheckCheck, Check, Smile, Mic, Search, X, Calendar, FileText, Image as ImageIcon, XCircle, FileCode, FileType, File, Download, Maximize2, Reply, Copy, Languages, Pin, Forward, CheckCircle2, ArrowDown } from 'lucide-react';
-import { generateChatResponse } from '../services/api';
+import { generateChatResponse, updateMessageInLetta, deleteMessageInLetta } from '../services/api';
 import { requestNotificationPermission, sendNotification } from '../utils/notifications';
 import EmojiPicker, { Theme } from 'emoji-picker-react';
 
@@ -14,7 +14,7 @@ const getDayDiff = (d1, d2) => {
 const getDateLabel = (timestamp) => {
   const date = new Date(timestamp);
   const today = new Date();
-  
+
   const dayDiff = getDayDiff(date, today);
 
   if (dayDiff === 0) return 'Today';
@@ -32,15 +32,15 @@ const isSameDay = (d1, d2) => d1.toDateString() === d2.toDateString();
 const getCalendarDays = (currentDate) => {
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
-  
+
   const firstDay = new Date(year, month, 1).getDay();
   const startDay = firstDay === 0 ? 6 : firstDay - 1;
-  
+
   const days = [];
-  
+
   const startDate = new Date(year, month, 1);
   startDate.setDate(startDate.getDate() - startDay);
-  
+
   for (let i = 0; i < 42; i++) {
     const d = new Date(startDate);
     d.setDate(d.getDate() + i);
@@ -50,7 +50,7 @@ const getCalendarDays = (currentDate) => {
       isToday: d.toDateString() === new Date().toDateString()
     });
   }
-  
+
   return days;
 };
 
@@ -76,7 +76,7 @@ const ChatArea = ({ onOpenModelInfo }) => {
   const [calendarDate, setCalendarDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showScrollDown, setShowScrollDown] = useState(false);
-  
+
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
   const menuRef = useRef(null);
@@ -90,11 +90,20 @@ const ChatArea = ({ onOpenModelInfo }) => {
 
   // Compute linear path
   const activeMessages = React.useMemo(() => {
-    if (!chatData || !chatData.rootId) return [];
+    if (!chatData) return [];
     if (Array.isArray(chatData)) return chatData;
 
+    const rootSiblings = Object.values(chatData.nodes)
+      .filter(n => n.parentId === null)
+      .sort((a, b) => a.timestamp - b.timestamp)
+      .map(n => n.id);
+      
+    if (rootSiblings.length === 0) return [];
+
     const path = [];
-    let curr = chatData.rootId;
+    const activeRootIdx = chatData.activeChildIndex[null] || 0;
+    let curr = rootSiblings[activeRootIdx];
+    
     while (curr && chatData.nodes[curr]) {
       const node = chatData.nodes[curr];
       path.push(node);
@@ -106,7 +115,7 @@ const ChatArea = ({ onOpenModelInfo }) => {
 
   const scrollToBottom = (instant = false) => {
     if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ 
+      messagesEndRef.current.scrollIntoView({
         behavior: instant ? 'auto' : 'smooth',
         block: 'end'
       });
@@ -214,12 +223,14 @@ const ChatArea = ({ onOpenModelInfo }) => {
     setIsGenerating(true);
     setStreamingText('');
     setStreamingParentId(parentNodeId);
-    
+
     const signal = getNewAbortSignal(activeChatId, true);
-    
+
     let botResponseText = '';
     let stats = null;
     let aborted = false;
+    let returnedUserMessageId = null;
+    let returnedAssistantMessageId = null;
     try {
       const result = await generateChatResponse(settings, activePersona, activeUser, historyToPass, (chunk) => {
         botResponseText += chunk;
@@ -227,12 +238,17 @@ const ChatArea = ({ onOpenModelInfo }) => {
         scrollToBottom();
       }, false, signal, isRegeneration, activeChatId, parentNodeId);
       stats = result.stats;
+      returnedUserMessageId = result.userMessageId;
+      returnedAssistantMessageId = result.assistantMessageId;
 
       if (stats && stats.promptTokens) {
-        updateMessageMetadata(activeChatId, parentNodeId, { 
+        updateMessageMetadata(activeChatId, parentNodeId, {
           promptTokens: stats.promptTokens,
-          isExact: true 
+          isExact: true,
+          ...(returnedUserMessageId ? { letta_id: returnedUserMessageId } : {})
         });
+      } else if (returnedUserMessageId) {
+        updateMessageMetadata(activeChatId, parentNodeId, { letta_id: returnedUserMessageId });
       }
     } catch (e) {
       if (e && e.name === 'AbortError') {
@@ -244,12 +260,13 @@ const ChatArea = ({ onOpenModelInfo }) => {
       clearGeneration(activeChatId);
       setIsGenerating(false);
       if (!aborted && botResponseText) {
-        await addMessage(activeChatId, { 
-          sender: 'bot', 
+        await addMessage(activeChatId, {
+          sender: 'bot',
           content: botResponseText,
-          stats: stats
+          stats: stats,
+          metadata: returnedAssistantMessageId ? { letta_id: returnedAssistantMessageId } : {}
         }, parentNodeId);
-        
+
         // Trigger notification if tab is hidden
         sendNotification(activePersona?.name || 'Tellama', botResponseText);
       }
@@ -267,7 +284,7 @@ const ChatArea = ({ onOpenModelInfo }) => {
 
   const handleSendRobust = async () => {
     if ((!inputText.trim() && attachments.length === 0) || !activePersona || isGenerating) return;
-    
+
     // Request notification permission on first user interaction
     requestNotificationPermission();
 
@@ -295,69 +312,221 @@ const ChatArea = ({ onOpenModelInfo }) => {
     }));
 
     setInputText('');
-    setAttachments([]); 
-    
+    setAttachments([]);
+
     const textarea = document.querySelector('textarea');
     if (textarea) textarea.style.height = 'auto';
-    
+
     const historyToPass = [...activeMessages, { sender: 'user', content: llmContent }];
     const lastMsgId = activeMessages.length > 0 ? activeMessages[activeMessages.length - 1].id : null;
-    
-    const userMsgId = await addMessage(activeChatId, { 
-      sender: 'user', 
+
+    // PRUNE INACTIVE BRANCHES: Make the currently selected branch "the main one forever"
+    if (lastMsgId) {
+      const lastNode = chatData.nodes[lastMsgId];
+      if (lastNode && lastNode.parentId) {
+        const parentNode = chatData.nodes[lastNode.parentId];
+        if (parentNode && parentNode.childrenIds && parentNode.childrenIds.length > 1) {
+          for (const siblingId of [...parentNode.childrenIds]) {
+            if (siblingId !== lastMsgId) {
+              // Cascade delete from Letta
+              const lettaIdsToDelete = [];
+              const traverse = (nodeId) => {
+                const node = chatData.nodes[nodeId];
+                if (!node) return;
+                if (node.metadata?.letta_id) {
+                  lettaIdsToDelete.push(node.metadata.letta_id);
+                }
+                if (node.childrenIds) {
+                  node.childrenIds.forEach(traverse);
+                }
+              };
+              traverse(siblingId);
+
+              for (const lettaId of lettaIdsToDelete) {
+                try {
+                  await deleteMessageInLetta(lettaId, activeUser);
+                } catch (e) {
+                  console.warn('Failed to delete message in Letta during pruning:', e);
+                }
+              }
+              // Cascade delete locally
+              await deleteMessageNode(activeChatId, siblingId);
+            }
+          }
+        }
+      }
+    }
+
+    const userMsgId = await addMessage(activeChatId, {
+      sender: 'user',
       content: finalContent,
       stats: {
         attachments: messageAttachments
       }
     }, lastMsgId);
-    
+
     await startGeneration(historyToPass, userMsgId);
   };
 
   const handleRegenerate = async (msg) => {
     if (isGenerating) return;
-    const parentNodeId = msg.parentId;
-    
+    // msg is the USER message whose response we want to regenerate
+    const oldUserMsgId = msg.id;
+    const oldUserNode = chatData.nodes[oldUserMsgId];
+
+    // Find the currently active bot response for this user message
+    const activeBotIdx = chatData.activeChildIndex[oldUserMsgId] ?? 0;
+    const activeBotChildId = oldUserNode?.childrenIds?.[activeBotIdx];
+    const activeBotNode = activeBotChildId ? chatData.nodes[activeBotChildId] : null;
+
+    // We MUST delete the old branch from Letta's memory right now!
+    // Otherwise Letta receives them sequentially and hallucinates duplicate messages.
+    // Letta memory is strictly linear and only remembers the CURRENT active branch.
+    if (activeBotNode?.metadata?.letta_id) {
+      await deleteMessageInLetta(activeBotNode.metadata.letta_id, activeUser).catch(() => { });
+    }
+    if (msg.metadata?.letta_id) {
+      await deleteMessageInLetta(msg.metadata.letta_id, activeUser).catch(() => { });
+    }
+
+    // Build history up to (but EXCLUDING) this user message
     const historyToPass = [];
     let curr = chatData.rootId;
     while (curr && chatData.nodes[curr]) {
-      const node = chatData.nodes[curr];
-      historyToPass.push(node);
-      if (curr === parentNodeId) break;
-      const activeIdx = chatData.activeChildIndex[curr] || 0;
-      curr = node.childrenIds[activeIdx];
+      const currNode = chatData.nodes[curr];
+      if (curr === oldUserMsgId) break;
+      historyToPass.push(currNode);
+      const idx = chatData.activeChildIndex[curr] ?? 0;
+      curr = currNode.childrenIds[idx];
     }
-    await startGeneration(historyToPass, parentNodeId, true);
+
+    // Create a NEW user message as a sibling to the old one (branching)
+    const newUserMsgId = await addMessage(activeChatId, {
+      sender: 'user',
+      content: msg.content,
+      stats: msg.stats || {}
+    }, msg.parentId);
+
+    // Add the new user message to history
+    historyToPass.push({ ...msg, id: newUserMsgId });
+
+    // Generate new bot response under the new user message
+    await startGeneration(historyToPass, newUserMsgId, true);
   };
 
-  const handleEditSubmit = async (msg) => {
-    if (!editingText.trim() || isGenerating) return;
+  const handleSwitchBranch = async (parentId, newIndex) => {
+    // 1. Identify the currently active User and Bot messages
+    const activeUserIdx = chatData.activeChildIndex[parentId] ?? 0;
     
-    if (editingText === msg.content) {
-      setEditingMessageId(null);
+    // We only need to patch if the branch is actually changing
+    if (activeUserIdx === newIndex) {
+      switchBranch(activeChatId, parentId, newIndex);
       return;
     }
 
-    const newMsgId = await addMessage(activeChatId, { sender: msg.sender, content: editingText, stats: msg.stats }, msg.parentId);
+    let activeUserId = null;
+    let newUserId = null;
+
+    if (parentId === null) {
+      const rootSiblings = Object.values(chatData.nodes).filter(n => n.parentId === null).sort((a, b) => a.timestamp - b.timestamp).map(n => n.id);
+      activeUserId = rootSiblings[activeUserIdx];
+      newUserId = rootSiblings[newIndex];
+    } else {
+      const parentNode = chatData.nodes[parentId];
+      if (!parentNode) return;
+      activeUserId = parentNode.childrenIds[activeUserIdx];
+      newUserId = parentNode.childrenIds[newIndex];
+    }
+
+    const activeUserNode = chatData.nodes[activeUserId];
+    
+    const activeBotIdx = chatData.activeChildIndex[activeUserId] ?? 0;
+    const activeBotId = activeUserNode?.childrenIds?.[activeBotIdx];
+    const activeBotNode = activeBotId ? chatData.nodes[activeBotId] : null;
+
+    if (!activeBotNode?.metadata?.letta_id || !activeUserNode?.metadata?.letta_id) {
+      switchBranch(activeChatId, parentId, newIndex);
+      return;
+    }
+
+    const aliveLettaUserId = activeUserNode.metadata.letta_id;
+    const aliveLettaBotId = activeBotNode.metadata.letta_id;
+    
+    // 2. Identify the target User and Bot messages we are switching to
+    const newUserNode = chatData.nodes[newUserId];
+    
+    const newBotIdx = chatData.activeChildIndex[newUserId] ?? 0;
+    const newBotId = newUserNode?.childrenIds?.[newBotIdx];
+    const newBotNode = newBotId ? chatData.nodes[newBotId] : null;
+
+    if (!newBotNode) {
+      switchBranch(activeChatId, parentId, newIndex);
+      return;
+    }
+
+    // 3. Update UI instantly
+    switchBranch(activeChatId, parentId, newIndex);
+
+    // 4. Patch the Letta messages with the target text in the background
+    (async () => {
+      try {
+        await updateMessageInLetta(aliveLettaUserId, newUserNode.content, activeUser, 'user');
+        await updateMessageInLetta(aliveLettaBotId, newBotNode.content, activeUser, 'assistant');
+        
+        // 5. Update local metadata so the new active branch owns the alive Letta IDs
+        await updateMessageMetadata(activeChatId, newUserId, { letta_id: aliveLettaUserId });
+        await updateMessageMetadata(activeChatId, newBotId, { letta_id: aliveLettaBotId });
+        
+      } catch (e) {
+        console.warn('Failed to restore branch state in Letta:', e);
+      }
+    })();
+  };
+
+  const handleEditSubmit = async (msg, triggerRegeneration = false) => {
+    if (!editingText.trim() || isGenerating) return;
+
+    if (editingText !== msg.content) {
+      await updateMessage(activeChatId, msg.id, { content: editingText });
+
+      if (msg.metadata && msg.metadata.letta_id) {
+        try {
+          const role = msg.sender === 'user' ? 'user' : 'assistant';
+          await updateMessageInLetta(msg.metadata.letta_id, editingText, activeUser, role);
+        } catch (e) {
+          console.warn('Failed to update message in Letta:', e);
+        }
+      }
+    }
+
     setEditingMessageId(null);
 
-    if (msg.sender === 'user') {
+    if (triggerRegeneration && msg.sender === 'user') {
+      // Delete all children (model responses) of this user message
+      const node = chatData.nodes[msg.id];
+      if (node && node.childrenIds && node.childrenIds.length > 0) {
+        for (const childId of [...node.childrenIds]) {
+          const childNode = chatData.nodes[childId];
+          if (childNode) {
+            if (childNode.metadata && childNode.metadata.letta_id) {
+              await deleteMessageInLetta(childNode.metadata.letta_id, activeUser).catch(() => { });
+            }
+            await deleteMessageNode(activeChatId, childId);
+          }
+        }
+      }
+
       const historyToPass = [];
       let curr = chatData.rootId;
       while (curr && chatData.nodes[curr]) {
-        const node = chatData.nodes[curr];
-        historyToPass.push(node);
-        if (curr === newMsgId) break; 
+        const currNode = chatData.nodes[curr];
+        historyToPass.push(currNode);
+        if (curr === msg.id) break;
         const activeIdx = chatData.activeChildIndex[curr] || 0;
-        curr = node.childrenIds[activeIdx];
-      }
-      
-      // Fallback check from original code
-      if (historyToPass.length === 0 || historyToPass[historyToPass.length - 1].id !== newMsgId) {
-        historyToPass.push({ sender: 'user', content: editingText });
+        curr = currNode.childrenIds[activeIdx];
       }
 
-      await startGeneration(historyToPass, newMsgId, true);
+      await startGeneration(historyToPass, msg.id, true);
     }
   };
 
@@ -446,6 +615,34 @@ const ChatArea = ({ onOpenModelInfo }) => {
     });
   };
 
+  const handleDeleteMessage = async (msg) => {
+    // Collect all message IDs in the subtree to delete from Letta
+    const lettaIdsToDelete = [];
+    const traverse = (nodeId) => {
+      const node = chatData.nodes[nodeId];
+      if (!node) return;
+      if (node.metadata?.letta_id) {
+        lettaIdsToDelete.push(node.metadata.letta_id);
+      }
+      if (node.childrenIds) {
+        node.childrenIds.forEach(traverse);
+      }
+    };
+    traverse(msg.id);
+
+    // Delete all collected IDs from Letta
+    for (const lettaId of lettaIdsToDelete) {
+      try {
+        await deleteMessageInLetta(lettaId, activeUser);
+      } catch (e) {
+        console.warn('Failed to delete message in Letta:', e);
+      }
+    }
+
+    // Cascade delete locally
+    await deleteMessageNode(activeChatId, msg.id);
+  };
+
   const handleContextMenu = (e, msg) => {
     e.preventDefault();
     setContextMenu({
@@ -500,7 +697,7 @@ const ChatArea = ({ onOpenModelInfo }) => {
     const isUser = msg.sender === 'user';
     const isEditing = editingMessageId === msg.id;
     const hasAttachments = msg.stats?.attachments && msg.stats.attachments.length > 0;
-    
+
     const isStartOfChain = !prevMsg || prevMsg.sender !== msg.sender;
     const isEndOfChain = !nextMsg || nextMsg.sender !== msg.sender;
 
@@ -510,9 +707,15 @@ const ChatArea = ({ onOpenModelInfo }) => {
     if (msg.parentId && chatData.nodes[msg.parentId]) {
       siblings = chatData.nodes[msg.parentId].childrenIds;
       currentVariantIndex = chatData.activeChildIndex[msg.parentId] || 0;
+    } else if (msg.parentId === null) {
+      // Root message siblings
+      siblings = Object.values(chatData.nodes).filter(n => n.parentId === null).sort((a, b) => a.timestamp - b.timestamp).map(n => n.id);
+      currentVariantIndex = chatData.activeChildIndex[null] || 0;
     }
+    // We branch on user messages now. 
+    // The switcher should appear if this message has siblings.
     const hasVariants = siblings.length > 1;
-    
+
     if (isEditing) {
       return (
         <div key={msg.id} className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} group p-1 w-full`}>
@@ -521,6 +724,11 @@ const ChatArea = ({ onOpenModelInfo }) => {
             <div className="flex justify-end gap-2 mt-2">
               <button onClick={() => setEditingMessageId(null)} className="text-xs text-[var(--tg-hint-color)] px-2 py-1">Cancel</button>
               <button onClick={() => handleEditSubmit(msg)} className="text-xs bg-[var(--tg-button-color)] text-[var(--tg-button-text-color)] px-3 py-1 rounded">Save</button>
+              {isUser && (
+                <button onClick={() => handleEditSubmit(msg, true)} className="text-xs bg-[var(--tg-link-color)] text-white px-3 py-1 rounded flex items-center gap-1">
+                  <RotateCcw size={12} /> Save & Regenerate
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -528,12 +736,12 @@ const ChatArea = ({ onOpenModelInfo }) => {
     }
 
     const contentParts = (msg.content && !hasAttachments) ? msg.content.split(/\n\s*\n/).filter(p => p.trim()) : [msg.content].filter(Boolean);
-    
+
     return (
       <div key={msg.id} id={`msg-${msg.id}`} className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} group transition-colors duration-500 p-1 w-full relative`}>
         <div className={`flex flex-col gap-1 w-full max-w-[85%] max-w-[520px] ${isUser ? 'items-end' : 'items-start'}`}>
           {hasAttachments && (
-            <div 
+            <div
               onContextMenu={(e) => handleContextMenu(e, msg)}
               style={{
                 borderTopLeftRadius: (isStartOfChain || isUser) ? '18px' : '4px',
@@ -548,41 +756,41 @@ const ChatArea = ({ onOpenModelInfo }) => {
                 <div className="px-3 py-1.5 whitespace-pre-wrap break-words text-[var(--tg-chat-bubble-in-text)]">
                   {msg.content}
                   <div className="px-0 pb-0 text-[11px] text-right mt-1 opacity-70 flex justify-end items-center">
-                    {new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                    {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     {isUser && (chatData.nodes[msg.id]?.childrenIds?.length > 0 ? <CheckCheck size={16} className="ml-1 opacity-80" /> : <Check size={16} className="ml-1 opacity-80" />)}
                   </div>
                 </div>
               )}
               {!msg.content && isEndOfChain && (
-                 <div className={`absolute bottom-0 ${isUser ? '-right-2' : '-left-2'} pointer-events-none`}>
-                   <div className={isUser ? 'tg-bubble-out-tail' : 'tg-bubble-in-tail'} />
-                 </div>
+                <div className={`absolute bottom-0 ${isUser ? '-right-2' : '-left-2'} pointer-events-none`}>
+                  <div className={isUser ? 'tg-bubble-out-tail' : 'tg-bubble-in-tail'} />
+                </div>
               )}
             </div>
           )}
-          
+
           {!hasAttachments && contentParts.map((part, pIdx) => {
             const isFirstInThisMsg = pIdx === 0;
             const isLastInThisMsg = pIdx === contentParts.length - 1;
-            
+
             const isVeryFirstInChain = isStartOfChain && isFirstInThisMsg;
             const isVeryLastInChain = isEndOfChain && isLastInThisMsg;
-            
+
             const tl = isVeryFirstInChain || isUser ? '18px' : '4px';
             const tr = isVeryFirstInChain || !isUser ? '18px' : '4px';
             const bl = isVeryLastInChain || isUser ? '18px' : '4px';
             const br = isVeryLastInChain || !isUser ? '18px' : '4px';
 
             return (
-              <div 
-                key={`${msg.id}-p${pIdx}`} 
+              <div
+                key={`${msg.id}-p${pIdx}`}
                 onContextMenu={(e) => handleContextMenu(e, msg)}
                 style={{ borderTopLeftRadius: tl, borderTopRightRadius: tr, borderBottomLeftRadius: bl, borderBottomRightRadius: br, minWidth: '150px' }}
                 className={`flex flex-col shadow-sm text-[15px] relative transition-all duration-300 ${isUser ? 'bg-[var(--tg-chat-bubble-out)] text-[var(--tg-chat-bubble-out-text)] tg-bubble-out' : 'bg-[var(--tg-chat-bubble-in)] text-[var(--tg-chat-bubble-in-text)] tg-bubble-in'} ${isVeryLastInChain ? (isUser ? 'tg-bubble-out-tail' : 'tg-bubble-in-tail') : ''} select-none`}              >
                 <div className="px-3 py-1.5 whitespace-pre-wrap break-words">{part}</div>
                 {isLastInThisMsg && (
                   <div className="px-3 pb-1 text-[11px] text-right mt-0 opacity-70 flex justify-end items-center">
-                    {new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                    {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     {isUser && (chatData.nodes[msg.id]?.childrenIds?.length > 0 ? <CheckCheck size={16} className="ml-1 opacity-80" /> : <Check size={16} className="ml-1 opacity-80" />)}
                   </div>
                 )}
@@ -590,24 +798,22 @@ const ChatArea = ({ onOpenModelInfo }) => {
             );
           })}
         </div>
-        
+
         <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'}`}>
           {!isEditing && (
             <>
-
-
               {hasVariants && (
                 <div className={`flex items-center gap-2 mt-1 text-xs text-[var(--tg-hint-color)] ${isUser ? 'mr-2' : 'ml-2'}`}>
-                  <button 
-                    onClick={() => switchBranch(activeChatId, msg.parentId, Math.max(0, currentVariantIndex - 1))}
+                  <button
+                    onClick={() => handleSwitchBranch(msg.parentId, Math.max(0, currentVariantIndex - 1))}
                     disabled={currentVariantIndex === 0}
                     className="hover:text-[var(--tg-text-color)] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                   >
                     <ChevronLeft size={14} />
                   </button>
                   <span className="font-medium">{currentVariantIndex + 1} / {siblings.length}</span>
-                  <button 
-                    onClick={() => switchBranch(activeChatId, msg.parentId, Math.min(siblings.length - 1, currentVariantIndex + 1))}
+                  <button
+                    onClick={() => handleSwitchBranch(msg.parentId, Math.min(siblings.length - 1, currentVariantIndex + 1))}
                     disabled={currentVariantIndex === siblings.length - 1}
                     className="hover:text-[var(--tg-text-color)] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                   >
@@ -633,7 +839,7 @@ const ChatArea = ({ onOpenModelInfo }) => {
     setChatSearchQuery('');
   };
 
-  const searchResults = chatSearchQuery.trim() 
+  const searchResults = chatSearchQuery.trim()
     ? activeMessages.filter(m => m.content.toLowerCase().includes(chatSearchQuery.toLowerCase()))
     : [];
 
@@ -691,17 +897,17 @@ const ChatArea = ({ onOpenModelInfo }) => {
   return (
     <div className="flex-grow flex flex-col h-full bg-transparent relative overflow-hidden">
       <div className="absolute inset-0 opacity-[0.05] pointer-events-none" style={{ backgroundSize: '400px' }}></div>
-      
+
       {/* Header */}
       <div className="h-[60px] flex-shrink-0 bg-[var(--tg-bg-color)] flex items-center px-2 md:px-4 z-30 relative md:border-l md:border-r border-[var(--tg-border-color)]">
-        <button 
+        <button
           onClick={() => {
             if (window.history.state?.isTellamaModal || window.history.state?.isChatInternalModal) {
               window.history.back();
             } else {
               setActiveChatId(null);
             }
-          }} 
+          }}
           className="md:hidden p-2 mr-1 text-[var(--tg-hint-color)] hover:bg-[var(--tg-secondary-bg-color)] rounded-full transition-colors flex-shrink-0"
         >
           <ArrowLeft size={24} />
@@ -742,13 +948,13 @@ const ChatArea = ({ onOpenModelInfo }) => {
                   </div>
                   <ChevronRight size={16} className="text-[var(--tg-hint-color)]" />
                 </button>
-                
+
                 <button className="mx-1 flex items-center gap-3 px-2 py-2 text-[var(--tg-text-color)] hover:bg-white/10 transition-colors rounded-xl text-[15px] opacity-50 cursor-default">
                   <CheckCheck size={18} className="text-[var(--tg-hint-color)]" />
                   <span>Select Messages</span>
                 </button>
 
-                <button 
+                <button
                   onClick={handleRenameChat}
                   className="mx-1 flex items-center gap-3 px-2 py-2 text-[var(--tg-text-color)] hover:bg-white/10 transition-colors rounded-xl text-[15px]"
                 >
@@ -756,7 +962,7 @@ const ChatArea = ({ onOpenModelInfo }) => {
                   <span>Rename Chat</span>
                 </button>
 
-                <button 
+                <button
                   onClick={handleDeleteChat}
                   className="mx-1 flex items-center gap-3 px-2 py-2 text-red-500 hover:bg-red-500/10 transition-colors rounded-xl text-[15px]"
                 >
@@ -787,8 +993,8 @@ const ChatArea = ({ onOpenModelInfo }) => {
         )}
       </div>
 
-      <div 
-        ref={containerRef} 
+      <div
+        ref={containerRef}
         className="flex-grow overflow-y-auto z-10 custom-scrollbar"
         style={{ overflowAnchor: 'auto' }}
       >
@@ -797,14 +1003,14 @@ const ChatArea = ({ onOpenModelInfo }) => {
             const prevMsg = activeMessages[idx - 1];
             const msgDate = new Date(msg.timestamp);
             const prevMsgDate = prevMsg ? new Date(prevMsg.timestamp) : null;
-            
+
             const showDateSeparator = !prevMsgDate || !isSameDay(msgDate, prevMsgDate);
-            
+
             return (
               <React.Fragment key={msg.id}>
                 {showDateSeparator && (
                   <div className="flex justify-center my-2">
-                    <div 
+                    <div
                       onClick={() => {
                         setSelectedDate(new Date(msg.timestamp));
                         setCalendarDate(new Date(msg.timestamp));
@@ -820,7 +1026,7 @@ const ChatArea = ({ onOpenModelInfo }) => {
               </React.Fragment>
             );
           })}
-          
+
           {/* Detailed Thinking / Loading State - Restored */}
           {displayIsGenerating && !displayStreamingText && (
             <div className="flex justify-start p-1">
@@ -830,16 +1036,15 @@ const ChatArea = ({ onOpenModelInfo }) => {
               </div>
             </div>
           )}
-          
+
           {/* Streaming Text State - Restored with paragraphs */}
           {displayIsGenerating && displayStreamingText && (
             <div className="flex flex-col gap-1 max-w-[80%] items-start self-start group p-1">
               {displayStreamingText.split(/\n\s*\n/).map((paragraph, pIdx, arr) => (
-                <div 
+                <div
                   key={pIdx}
-                  className={`rounded-[18px] px-3 py-1.5 shadow-sm text-[15px] bg-[var(--tg-chat-bubble-in)] text-[var(--tg-chat-bubble-in-text)] relative whitespace-pre-wrap break-words tg-bubble-in ${
-                    pIdx === arr.length - 1 ? 'rounded-bl-[4px] tg-bubble-in-tail' : ''
-                  }`}
+                  className={`rounded-[18px] px-3 py-1.5 shadow-sm text-[15px] bg-[var(--tg-chat-bubble-in)] text-[var(--tg-chat-bubble-in-text)] relative whitespace-pre-wrap break-words tg-bubble-in ${pIdx === arr.length - 1 ? 'rounded-bl-[4px] tg-bubble-in-tail' : ''
+                    }`}
                 >
                   {paragraph}
                   {pIdx === arr.length - 1 && (
@@ -849,7 +1054,7 @@ const ChatArea = ({ onOpenModelInfo }) => {
               ))}
             </div>
           )}
-          
+
           <div ref={messagesEndRef} />
         </div>
       </div>
@@ -861,8 +1066,8 @@ const ChatArea = ({ onOpenModelInfo }) => {
             {showEmojiPicker && (
               <div className="absolute bottom-[calc(100%+8px)] left-0 w-[calc(50%+40px)] z-[100] animate-in slide-in-from-bottom-2 fade-in duration-200">
                 <div className="overflow-hidden rounded-[20px] shadow-2xl backdrop-blur-xl bg-[var(--tg-secondary-bg-color)]/95">
-                  <EmojiPicker 
-                    onEmojiClick={onEmojiClick} 
+                  <EmojiPicker
+                    onEmojiClick={onEmojiClick}
                     theme={settings.theme === 'dark' ? Theme.DARK : Theme.LIGHT}
                     emojiStyle="apple"
                     skinTonesDisabled
@@ -879,19 +1084,19 @@ const ChatArea = ({ onOpenModelInfo }) => {
             <div className={`overflow-hidden transition-all duration-300 ease-in-out ${attachments.length > 0 ? 'max-h-[90px] opacity-100' : 'max-h-0 opacity-0'}`}><div className="flex overflow-x-auto px-2 gap-2 custom-scrollbar pt-2 pb-2">{attachments.map(att => (<div key={att.id} className="flex-shrink-0 relative group"><div onClick={() => setPreviewFile(att)} className="cursor-pointer">{att.previewUrl ? <div className="w-14 h-14 rounded-xl overflow-hidden shadow-sm"><img src={att.previewUrl} className="w-full h-full object-cover" /></div> : <div className="w-14 h-14 rounded-xl bg-[var(--tg-bg-color)] shadow-sm flex flex-col items-center justify-center p-1 text-center">{getFileIcon(att)}<span className="text-[8px] truncate w-full">{att.name}</span></div>}</div><button onClick={(e) => { e.stopPropagation(); removeAttachment(att.id); }} className="absolute -top-1 -right-1 bg-[var(--tg-bg-color)] text-red-500 rounded-full shadow-md w-5 h-5 flex items-center justify-center border opacity-0 group-hover:opacity-100 transition-opacity"><X size={12} /></button></div>))}</div></div>
             {attachments.length > 0 && <div className="mx-8 h-[1px] bg-[var(--tg-border-color)] opacity-40" />}
             <div className="flex items-center px-2 py-1 min-h-[48px]">
-              <button 
+              <button
                 onClick={(e) => { e.stopPropagation(); setShowEmojiPicker(!showEmojiPicker); }}
                 className={`p-2 transition-colors ${showEmojiPicker ? 'text-[var(--tg-link-color)]' : 'text-[var(--tg-hint-color)] hover:text-[var(--tg-link-color)]'}`}
               >
                 <Smile size={24} />
               </button>
-              <textarea 
-                className="w-full bg-transparent text-[var(--tg-text-color)] py-2.5 px-1 outline-none resize-none max-h-32 text-[16px] leading-tight custom-scrollbar" 
-                placeholder="Message" 
-                rows={1} 
-                value={inputText} 
-                onChange={(e) => { setInputText(e.target.value); e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 128) + 'px'; }} 
-                onKeyDown={handleKeyDown} 
+              <textarea
+                className="w-full bg-transparent text-[var(--tg-text-color)] py-2.5 px-1 outline-none resize-none max-h-32 text-[16px] leading-tight custom-scrollbar"
+                placeholder="Message"
+                rows={1}
+                value={inputText}
+                onChange={(e) => { setInputText(e.target.value); e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 128) + 'px'; }}
+                onKeyDown={handleKeyDown}
               />
               <button onClick={() => fileInputRef.current?.click()} className="p-2 text-[var(--tg-hint-color)] hover:text-[var(--tg-link-color)] transition-colors">
                 <Paperclip size={24} />
@@ -899,13 +1104,12 @@ const ChatArea = ({ onOpenModelInfo }) => {
             </div>
           </div>
           <div className="relative flex-shrink-0 flex flex-col items-center">
-            <button 
+            <button
               onClick={() => scrollToBottom()}
-              className={`absolute left-1/2 -translate-x-1/2 w-[48px] h-[48px] bg-[var(--tg-secondary-bg-color)] hover:bg-[var(--tg-link-color)] text-[var(--tg-hint-color)] hover:text-white rounded-full flex items-center justify-center z-40 transition-all duration-300 ${
-                showScrollDown 
-                  ? 'bottom-[calc(100%+12px)] opacity-100 scale-100 pointer-events-auto' 
-                  : 'bottom-[calc(100%-20px)] opacity-0 scale-90 pointer-events-none'
-              }`}
+              className={`absolute left-1/2 -translate-x-1/2 w-[48px] h-[48px] bg-[var(--tg-secondary-bg-color)] hover:bg-[var(--tg-link-color)] text-[var(--tg-hint-color)] hover:text-white rounded-full flex items-center justify-center z-40 transition-all duration-300 ${showScrollDown
+                ? 'bottom-[calc(100%+12px)] opacity-100 scale-100 pointer-events-auto'
+                : 'bottom-[calc(100%-20px)] opacity-0 scale-90 pointer-events-none'
+                }`}
             >
               <ArrowDown size={20} />
             </button>
@@ -926,13 +1130,13 @@ const ChatArea = ({ onOpenModelInfo }) => {
                 {calendarDate.toLocaleDateString([], { month: 'long', year: 'numeric' })}
               </h3>
               <div className="flex gap-2">
-                <button 
+                <button
                   onClick={() => setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() - 1, 1))}
                   className="text-[var(--tg-hint-color)] hover:text-[var(--tg-text-color)] transition-colors"
                 >
                   <ChevronLeft size={24} />
                 </button>
-                <button 
+                <button
                   onClick={() => setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() + 1, 1))}
                   className="text-[var(--tg-hint-color)] hover:text-[var(--tg-text-color)] transition-colors"
                 >
@@ -940,46 +1144,42 @@ const ChatArea = ({ onOpenModelInfo }) => {
                 </button>
               </div>
             </div>
-            
+
             {/* Weekdays */}
             <div className="grid grid-cols-7 text-center text-[var(--tg-hint-color)] text-[13px] font-medium">
               <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
             </div>
-            
+
             {/* Days Grid */}
             <div className="grid grid-cols-7 gap-y-1 text-center">
               {getCalendarDays(calendarDate).map(({ date, isCurrentMonth, isToday }, idx) => {
                 const isSelected = selectedDate && isSameDay(date, selectedDate);
-                
+
                 const today = new Date();
                 today.setHours(0, 0, 0, 0);
                 const compareDate = new Date(date);
                 compareDate.setHours(0, 0, 0, 0);
                 const isFuture = compareDate > today;
-                
+
                 return (
-                  <button 
+                  <button
                     key={idx}
                     onClick={() => !isFuture && setSelectedDate(date)}
                     disabled={isFuture}
-                    className={`w-10 h-10 mx-auto flex items-center justify-center rounded-full text-[15px] transition-colors ${
-                      isCurrentMonth ? 'text-[var(--tg-text-color)]' : 'text-[var(--tg-hint-color)] opacity-50'
-                    } ${
-                      isSelected ? 'bg-[var(--tg-link-color)] text-white' : ''
-                    } ${
-                      isToday && !isSelected ? 'border border-[var(--tg-link-color)]' : ''
-                    } ${
-                      isFuture ? 'opacity-25 cursor-not-allowed' : 'hover:bg-[var(--tg-secondary-bg-color)]'
-                    }`}
+                    className={`w-10 h-10 mx-auto flex items-center justify-center rounded-full text-[15px] transition-colors ${isCurrentMonth ? 'text-[var(--tg-text-color)]' : 'text-[var(--tg-hint-color)] opacity-50'
+                      } ${isSelected ? 'bg-[var(--tg-link-color)] text-white' : ''
+                      } ${isToday && !isSelected ? 'border border-[var(--tg-link-color)]' : ''
+                      } ${isFuture ? 'opacity-25 cursor-not-allowed' : 'hover:bg-[var(--tg-secondary-bg-color)]'
+                      }`}
                   >
                     {date.getDate()}
                   </button>
                 );
               })}
             </div>
-            
+
             {/* Action Button */}
-            <button 
+            <button
               onClick={() => {
                 if (selectedDate) {
                   const msg = activeMessages.find(m => isSameDay(new Date(m.timestamp), selectedDate));
@@ -1000,11 +1200,11 @@ const ChatArea = ({ onOpenModelInfo }) => {
       {previewFile && (<div className="fixed inset-0 z-[100] bg-black/90 flex flex-col animate-in fade-in duration-300" onClick={() => setPreviewFile(null)}><div className="h-[60px] flex items-center justify-between px-6 bg-gradient-to-b from-black/50 to-transparent"><div className="flex flex-col text-white"><span className="font-medium truncate max-w-[300px]">{previewFile.name}</span><span className="text-gray-400 text-[12px]">{formatSize(previewFile.size)}</span></div><div className="flex gap-4"><button className="p-2 text-white hover:bg-white/10 rounded-full transition-colors"><Download size={22} /></button><button onClick={() => setPreviewFile(null)} className="p-2 text-white hover:bg-white/10 rounded-full transition-colors"><X size={24} /></button></div></div><div className="flex-grow flex items-center justify-center p-4 overflow-hidden" onClick={e => e.stopPropagation()}>{previewFile.type.startsWith('image/') ? <img src={previewFile.dataUrl || previewFile.previewUrl} className="max-w-full max-h-full object-contain shadow-2xl rounded-lg animate-in zoom-in-95 duration-300" /> : <div className="w-full max-w-4xl h-full bg-[#1e1e1e] rounded-xl shadow-2xl border border-white/10 flex flex-col overflow-hidden animate-in slide-in-from-bottom-4"><div className="h-10 bg-white/5 border-b border-white/10 flex items-center px-4"><div className="flex items-center gap-2">{getFileIcon(previewFile)}<span className="text-gray-400 text-xs uppercase">{previewFile.name.split('.').pop()} File</span></div></div><div className="flex-grow overflow-auto p-6 custom-scrollbar">{previewFile.content ? <pre className="text-gray-300 font-mono text-[14px] leading-relaxed whitespace-pre-wrap">{previewFile.content}</pre> : <div className="h-full flex flex-col items-center justify-center text-gray-500 gap-4"><File size={64} strokeWidth={1} /><span>No text preview available</span></div>}</div></div>}</div></div>)}
 
       {contextMenu && (
-        <div 
+        <div
           className="fixed z-[1000] w-48 bg-[var(--tg-bg-color)] rounded-2xl shadow-2xl overflow-hidden py-1 flex flex-col animate-in zoom-in-95 duration-100"
-          style={{ 
-            left: Math.min(contextMenu.x, window.innerWidth - 200), 
-            top: Math.min(contextMenu.y, window.innerHeight - 400) 
+          style={{
+            left: Math.min(contextMenu.x, window.innerWidth - 200),
+            top: Math.min(contextMenu.y, window.innerHeight - 400)
           }}
           onMouseDown={e => e.stopPropagation()}
         >
@@ -1013,7 +1213,7 @@ const ChatArea = ({ onOpenModelInfo }) => {
             <span className="flex-grow text-left">Reply</span>
           </button>
 
-          <button 
+          <button
             onClick={() => { setEditingMessageId(contextMenu.msg.id); setEditingText(contextMenu.msg.content); setContextMenu(null); }}
             className="flex items-center gap-3 px-3 py-1.5 hover:bg-[var(--tg-secondary-bg-color)] text-[var(--tg-text-color)] transition-colors text-[14px] group"
           >
@@ -1021,7 +1221,7 @@ const ChatArea = ({ onOpenModelInfo }) => {
             <span className="flex-grow text-left">Edit</span>
           </button>
 
-          <button 
+          <button
             onClick={() => handleCopyText(contextMenu.msg.content)}
             className="flex items-center gap-3 px-3 py-1.5 hover:bg-[var(--tg-secondary-bg-color)] text-[var(--tg-text-color)] transition-colors text-[14px] group"
           >
@@ -1029,8 +1229,8 @@ const ChatArea = ({ onOpenModelInfo }) => {
             <span className="flex-grow text-left">Copy</span>
           </button>
 
-          {contextMenu.msg.sender === 'bot' && (
-            <button 
+          {contextMenu.msg.sender === 'user' && contextMenu.msg.id === activeMessages[activeMessages.length - 2]?.id && (
+            <button
               onClick={() => { handleRegenerate(contextMenu.msg); setContextMenu(null); }}
               className="flex items-center gap-3 px-3 py-1.5 hover:bg-[var(--tg-secondary-bg-color)] text-[var(--tg-text-color)] transition-colors text-[14px] group"
             >
@@ -1049,8 +1249,8 @@ const ChatArea = ({ onOpenModelInfo }) => {
             <span className="flex-grow text-left">Select</span>
           </button>
 
-          <button 
-            onClick={() => { deleteMessageNode(activeChatId, contextMenu.msg.id); setContextMenu(null); }}
+          <button
+            onClick={() => { handleDeleteMessage(contextMenu.msg); setContextMenu(null); }}
             className="flex items-center gap-3 px-3 py-1.5 hover:bg-red-500/10 text-red-500 transition-colors text-[14px]"
           >
             <Trash2 size={18} />

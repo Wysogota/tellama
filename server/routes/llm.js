@@ -215,12 +215,22 @@ router.post('/proxy/:provider/chat/completions', async (req, res) => {
       } : {}),
     };
 
+    // Determine the intent of the request by looking at the last message
+    let intent = 'Agent Internal Loop';
+    const lastMsg = sanitizedMessages[sanitizedMessages.length - 1];
+    if (lastMsg) {
+      if (lastMsg.role === 'user') intent = 'User Input (Initial)';
+      else if (lastMsg.role === 'tool') intent = 'Tool Result (Follow-up)';
+      else if (lastMsg.tool_calls) intent = 'Agent Tool Execution';
+    }
+
     // Notify clients about the request Letta is sending
     notifyClients({
       type: 'letta_request',
       data: {
         provider: baseProvider,
         url: upstreamUrl,
+        intent: intent,
         body: requestBody
       }
     });

@@ -14,10 +14,7 @@ const LETTA_PASSWORD = process.env.LETTA_PASSWORD || '';
 let notifyClients = () => {};
 export function setNotifyClients(fn) { notifyClients = fn; }
 
-// Persist the assistant reply to local SQLite and notify WS clients.
-// Called after every /messages/stream completes — dedup prevents double-saves
-// when the browser is connected and also calls addMessage → syncPush.
-function persistAssistantMessage(sessionId, parentMessageId, content) {
+function persistAssistantMessage(sessionId, parentMessageId, content, lettaMessageId) {
   if (!sessionId || !content) return;
   try {
     if (!db.prepare('SELECT 1 FROM chat_sessions WHERE id = ?').get(sessionId)) {
@@ -28,16 +25,21 @@ function persistAssistantMessage(sessionId, parentMessageId, content) {
     if (parentMessageId && db.prepare(
       `SELECT 1 FROM messages WHERE session_id = ? AND role != 'user' AND parent_message_id = ?`
     ).get(sessionId, parentMessageId)) {
+      // If we have a lettaMessageId, we could update the ID here, but SQLite PRIMARY KEY cannot be easily changed in a simple query without ON CONFLICT.
+      // But actually, we don't need to do anything because the client will do it.
       return;
     }
 
     const now = Date.now();
+    const idToUse = uuidv4();
+    const metadata = lettaMessageId ? JSON.stringify({ letta_id: lettaMessageId }) : '{}';
+    
     db.prepare(
       `INSERT INTO messages (id, session_id, role, content, parent_message_id, created_at, updated_at, metadata)
-       VALUES (?, ?, 'assistant', ?, ?, ?, ?, '{}')`
-    ).run(uuidv4(), sessionId, content, parentMessageId ?? null, now, now);
+       VALUES (?, ?, 'assistant', ?, ?, ?, ?, ?)`
+    ).run(idToUse, sessionId, content, parentMessageId ?? null, now, now, metadata);
 
-    console.log(`[Letta Proxy] ✓ Persisted assistant reply (${content.length} chars) → session ${sessionId}`);
+    console.log(`[Letta Proxy] ✓ Persisted assistant reply (${content.length} chars) → session ${sessionId} with letta_id ${lettaMessageId}`);
     notifyClients({ type: 'invalidate', tables: ['messages'], from: 'server', timestamp: now });
   } catch (e) {
     console.error('[Letta Proxy] Failed to persist assistant message:', e.message);
@@ -78,6 +80,7 @@ router.use(async (req, res) => {
 
       // Buffer assistant_message content while forwarding the stream to the client
       let assistantContent = '';
+      let assistantMessageId = null;
       const decoder = new TextDecoder('utf-8');
       let clientDisconnected = false;
 
@@ -98,6 +101,7 @@ router.use(async (req, res) => {
           try {
             const msg = JSON.parse(dataStr);
             if (msg.message_type === 'assistant_message' && msg.content) {
+              if (msg.id) assistantMessageId = msg.id;
               assistantContent += msg.content;
               notifyClients({ type: 'stream_chunk', sessionId, content: assistantContent });
             }
@@ -108,11 +112,8 @@ router.use(async (req, res) => {
       nodeStream.on('end', () => {
         if (!res.writableEnded) res.end();
         // Only persist server-side when the client disconnected before the stream ended.
-        // If the client is still connected it calls addMessage → syncPush itself.
-        // clientDisconnected is set by res.on('close') which fires when the TCP socket drops
-        // (NOT when we call res.end() — that fires in a later event-loop tick, after this check).
         if (clientDisconnected && assistantContent) {
-          persistAssistantMessage(sessionId, parentMessageId, assistantContent);
+          persistAssistantMessage(sessionId, parentMessageId, assistantContent, assistantMessageId);
         }
         notifyClients({ type: 'stream_end', sessionId });
       });
