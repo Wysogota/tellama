@@ -14,8 +14,41 @@ const LETTA_PASSWORD = process.env.LETTA_PASSWORD || '';
 let notifyClients = () => {};
 export function setNotifyClients(fn) { notifyClients = fn; }
 
-function persistAssistantMessage(sessionId, parentMessageId, content, lettaMessageId) {
+function parseThoughtsAndContent(text) {
+  let thoughts = '';
+  let content = text;
+  
+  let openTag = '<thought>';
+  let closeTag = '</thought>';
+  
+  let openIndex = text.indexOf(openTag);
+  if (openIndex === -1) {
+    openTag = '<think>';
+    closeTag = '</think>';
+    openIndex = text.indexOf(openTag);
+  }
+  
+  if (openIndex !== -1) {
+    const closeIndex = text.indexOf(closeTag);
+    if (closeIndex !== -1) {
+      thoughts = text.substring(openIndex + openTag.length, closeIndex);
+      content = text.substring(0, openIndex) + text.substring(closeIndex + closeTag.length);
+    } else {
+      thoughts = text.substring(openIndex + openTag.length);
+      content = text.substring(0, openIndex);
+    }
+  }
+  
+  return { thoughts: thoughts.trim(), content: content.trim() };
+}
+
+function persistAssistantMessage(sessionId, parentMessageId, content, lettaMessageId, reasoning = '') {
   if (!sessionId || !content) return;
+  
+  const parsed = parseThoughtsAndContent(content);
+  const finalContent = parsed.content || '...';
+  const combinedReasoning = (reasoning || parsed.thoughts || '').trim();
+
   try {
     if (!db.prepare('SELECT 1 FROM chat_sessions WHERE id = ?').get(sessionId)) {
       console.warn('[Letta Proxy] persist skipped: session not in DB:', sessionId);
@@ -25,21 +58,22 @@ function persistAssistantMessage(sessionId, parentMessageId, content, lettaMessa
     if (parentMessageId && db.prepare(
       `SELECT 1 FROM messages WHERE session_id = ? AND role != 'user' AND parent_message_id = ?`
     ).get(sessionId, parentMessageId)) {
-      // If we have a lettaMessageId, we could update the ID here, but SQLite PRIMARY KEY cannot be easily changed in a simple query without ON CONFLICT.
-      // But actually, we don't need to do anything because the client will do it.
       return;
     }
 
     const now = Date.now();
     const idToUse = uuidv4();
-    const metadata = lettaMessageId ? JSON.stringify({ letta_id: lettaMessageId }) : '{}';
+    const metadataObj = {};
+    if (lettaMessageId) metadataObj.letta_id = lettaMessageId;
+    if (combinedReasoning) metadataObj.reasoning = combinedReasoning;
+    const metadata = JSON.stringify(metadataObj);
     
     db.prepare(
       `INSERT INTO messages (id, session_id, role, content, parent_message_id, created_at, updated_at, metadata)
        VALUES (?, ?, 'assistant', ?, ?, ?, ?, ?)`
-    ).run(idToUse, sessionId, content, parentMessageId ?? null, now, now, metadata);
+    ).run(idToUse, sessionId, finalContent, parentMessageId ?? null, now, now, metadata);
 
-    console.log(`[Letta Proxy] ✓ Persisted assistant reply (${content.length} chars) → session ${sessionId} with letta_id ${lettaMessageId}`);
+    console.log(`[Letta Proxy] ✓ Persisted assistant reply (${finalContent.length} chars) with reasoning (${combinedReasoning.length} chars) → session ${sessionId} with letta_id ${lettaMessageId}`);
     notifyClients({ type: 'invalidate', tables: ['messages'], from: 'server', timestamp: now });
   } catch (e) {
     console.error('[Letta Proxy] Failed to persist assistant message:', e.message);
@@ -80,6 +114,7 @@ router.use(async (req, res) => {
 
       // Buffer assistant_message content while forwarding the stream to the client
       let assistantContent = '';
+      let internalMonologue = '';
       let assistantMessageId = null;
       const decoder = new TextDecoder('utf-8');
       let clientDisconnected = false;
@@ -100,10 +135,14 @@ router.use(async (req, res) => {
           if (!dataStr || dataStr === '[DONE]') continue;
           try {
             const msg = JSON.parse(dataStr);
+            console.log("[DEBUG Letta Proxy] message:", msg);
             if (msg.message_type === 'assistant_message' && msg.content) {
               if (msg.id) assistantMessageId = msg.id;
               assistantContent += msg.content;
               notifyClients({ type: 'stream_chunk', sessionId, content: assistantContent });
+            } else if ((msg.message_type === 'internal_monologue' && msg.internal_monologue) || 
+                       (msg.message_type === 'reasoning_message' && msg.reasoning)) {
+              internalMonologue += msg.internal_monologue || msg.reasoning;
             }
           } catch (_) { /* non-JSON SSE line */ }
         }
@@ -113,8 +152,9 @@ router.use(async (req, res) => {
         if (!res.writableEnded) res.end();
         // Only persist server-side when the client disconnected before the stream ended.
         if (clientDisconnected && assistantContent) {
-          persistAssistantMessage(sessionId, parentMessageId, assistantContent, assistantMessageId);
+          persistAssistantMessage(sessionId, parentMessageId, assistantContent, assistantMessageId, internalMonologue);
         }
+        console.log('[DEBUG Letta Proxy] internalMonologue:', internalMonologue);
         notifyClients({ type: 'stream_end', sessionId });
       });
 

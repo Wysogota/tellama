@@ -195,6 +195,20 @@ const ChatArea = ({ onOpenModelInfo }) => {
 
   const [streamingText, setStreamingText] = useState('');
   const [streamingParentId, setStreamingParentId] = useState(null);
+  const [streamingThoughts, setStreamingThoughts] = useState('');
+  const [expandedThoughts, setExpandedThoughts] = useState(new Set());
+
+  const toggleThought = (msgId) => {
+    setExpandedThoughts(prev => {
+      const next = new Set(prev);
+      if (next.has(msgId)) {
+        next.delete(msgId);
+      } else {
+        next.add(msgId);
+      }
+      return next;
+    });
+  };
 
   const displayStreamingText = streamingText || streamingMessages[activeChatId] || '';
   const displayIsGenerating = isGenerating || activeChatId in streamingMessages;
@@ -223,6 +237,7 @@ const ChatArea = ({ onOpenModelInfo }) => {
     setIsGenerating(true);
     setStreamingText('');
     setStreamingParentId(parentNodeId);
+    setStreamingThoughts('');
 
     const signal = getNewAbortSignal(activeChatId, true);
 
@@ -232,9 +247,13 @@ const ChatArea = ({ onOpenModelInfo }) => {
     let returnedUserMessageId = null;
     let returnedAssistantMessageId = null;
     try {
-      const result = await generateChatResponse(settings, activePersona, activeUser, historyToPass, (chunk) => {
-        botResponseText += chunk;
-        setStreamingText(botResponseText);
+      const result = await generateChatResponse(settings, activePersona, activeUser, historyToPass, (chunk, isMonologue) => {
+        if (isMonologue) {
+          setStreamingThoughts(prev => prev + chunk);
+        } else {
+          botResponseText += chunk;
+          setStreamingText(botResponseText);
+        }
         scrollToBottom();
       }, false, signal, isRegeneration, activeChatId, parentNodeId);
       stats = result.stats;
@@ -272,6 +291,7 @@ const ChatArea = ({ onOpenModelInfo }) => {
       }
       setStreamingText('');
       setStreamingParentId(null);
+      setStreamingThoughts('');
 
       if (!aborted && botResponseText) {
         setStatusOverride('online');
@@ -752,6 +772,25 @@ const ChatArea = ({ onOpenModelInfo }) => {
               }}
               className={`flex flex-col shadow-sm relative transition-all duration-300 ${isUser ? 'bg-[var(--tg-chat-bubble-out)] tg-bubble-out' : 'bg-[var(--tg-chat-bubble-in)] tg-bubble-in'} p-1 select-none`}            >
               {renderMessageAttachments(msg.stats.attachments)}
+              {!isUser && expandedThoughts.has(msg.id) && (msg.stats?.reasoning || msg.stats?.monologue) && (
+                <div
+                  style={{
+                    backgroundColor: 'color-mix(in srgb, var(--tg-link-color) 10%, transparent)',
+                    borderColor: 'color-mix(in srgb, var(--tg-link-color) 20%, transparent)',
+                    color: 'color-mix(in srgb, var(--tg-text-color) 80%, transparent)'
+                  }}
+                  className="relative group/thought mx-1 mt-1 mb-1 p-2 rounded-[10px] text-[11px] font-mono tracking-tight whitespace-pre-wrap leading-tight border"
+                >
+                  {msg.stats.reasoning || msg.stats.monologue}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); toggleThought(msg.id); }}
+                    className="absolute bottom-[-10px] left-1/2 -translate-x-1/2 w-[48px] h-[20px] bg-[var(--tg-bg-color)] border border-[var(--tg-border-color)] text-[var(--tg-hint-color)] hover:text-[var(--tg-link-color)] hover:border-[var(--tg-link-color)]/40 rounded-full flex items-center justify-center shadow-md z-20 transition-all duration-300 opacity-0 scale-90 translate-y-1 pointer-events-none group-hover/thought:opacity-100 group-hover/thought:scale-100 group-hover/thought:translate-y-0 group-hover/thought:pointer-events-auto"
+                    title="Hide thoughts"
+                  >
+                    <ArrowDown size={12} />
+                  </button>
+                </div>
+              )}
               {msg.content && (
                 <div className="px-3 py-1.5 whitespace-pre-wrap break-words text-[var(--tg-chat-bubble-in-text)]">
                   {msg.content}
@@ -787,6 +826,25 @@ const ChatArea = ({ onOpenModelInfo }) => {
                 onContextMenu={(e) => handleContextMenu(e, msg)}
                 style={{ borderTopLeftRadius: tl, borderTopRightRadius: tr, borderBottomLeftRadius: bl, borderBottomRightRadius: br, minWidth: '150px' }}
                 className={`flex flex-col shadow-sm text-[15px] relative transition-all duration-300 ${isUser ? 'bg-[var(--tg-chat-bubble-out)] text-[var(--tg-chat-bubble-out-text)] tg-bubble-out' : 'bg-[var(--tg-chat-bubble-in)] text-[var(--tg-chat-bubble-in-text)] tg-bubble-in'} ${isVeryLastInChain ? (isUser ? 'tg-bubble-out-tail' : 'tg-bubble-in-tail') : ''} select-none`}              >
+                {isFirstInThisMsg && !isUser && expandedThoughts.has(msg.id) && (msg.stats?.reasoning || msg.stats?.monologue) && (
+                  <div
+                    style={{
+                      backgroundColor: 'color-mix(in srgb, var(--tg-link-color) 10%, transparent)',
+                      borderColor: 'color-mix(in srgb, var(--tg-link-color) 20%, transparent)',
+                      color: 'color-mix(in srgb, var(--tg-text-color) 80%, transparent)'
+                    }}
+                    className="relative group/thought mx-2 mt-2 mb-1 p-2 rounded-[10px] text-[11px] font-mono tracking-tight whitespace-pre-wrap leading-tight border"
+                  >
+                    {msg.stats.reasoning || msg.stats.monologue}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); toggleThought(msg.id); }}
+                      className="absolute bottom-[-10px] left-1/2 -translate-x-1/2 w-[48px] h-[20px] bg-[var(--tg-bg-color)] border border-[var(--tg-border-color)] text-[var(--tg-hint-color)] hover:text-[var(--tg-link-color)] hover:border-[var(--tg-link-color)]/40 rounded-full flex items-center justify-center shadow-md z-20 transition-all duration-300 opacity-0 scale-90 translate-y-1 pointer-events-none group-hover/thought:opacity-100 group-hover/thought:scale-100 group-hover/thought:translate-y-0 group-hover/thought:pointer-events-auto"
+                      title="Hide thoughts"
+                    >
+                      <ArrowDown size={12} />
+                    </button>
+                  </div>
+                )}
                 <div className="px-3 py-1.5 whitespace-pre-wrap break-words">{part}</div>
                 {isLastInThisMsg && (
                   <div className="px-3 pb-1 text-[11px] text-right mt-0 opacity-70 flex justify-end items-center">
@@ -1027,12 +1085,27 @@ const ChatArea = ({ onOpenModelInfo }) => {
             );
           })}
 
-          {/* Detailed Thinking / Loading State - Restored */}
-          {displayIsGenerating && !displayStreamingText && (
+          {/* Detailed Thinking / Monologue State */}
+          {/* {displayIsGenerating && streamingThoughts && (
+            <div className="flex flex-col items-start gap-1 p-1 max-w-[80%] mb-1.5">
+              <div className="rounded-[18px] px-4 py-2.5 shadow-sm bg-[var(--tg-secondary-bg-color)]/60 text-[var(--tg-text-color)] rounded-bl-[4px] flex flex-col border border-[var(--tg-border-color)]/40 backdrop-blur-md animate-in fade-in duration-300">
+                <div className="flex items-center mb-1 text-[var(--tg-hint-color)]">
+                  <Loader2 size={12} className="animate-spin text-emerald-500 mr-2 flex-shrink-0" />
+                  <span className="text-[11px] font-bold uppercase tracking-wider opacity-90">Thought Process</span>
+                </div>
+                <div className="text-[13px] italic whitespace-pre-wrap break-words opacity-80 leading-relaxed font-sans pr-4">
+                  {streamingThoughts}
+                </div>
+              </div>
+            </div>
+          )} */}
+
+          {/* Initial Loading Spinner (Before thoughts or text starts) */}
+          {displayIsGenerating && !streamingThoughts && !displayStreamingText && (
             <div className="flex justify-start p-1">
               <div className="max-w-[80%] rounded-[18px] px-4 py-2.5 shadow-sm bg-[var(--tg-chat-bubble-in)] text-[var(--tg-chat-bubble-in-text)] rounded-bl-[4px] flex items-center animate-in fade-in duration-300 tg-bubble-in tg-bubble-in-tail">
-                <Loader2 size={16} className="animate-spin text-[var(--tg-link-color)] mr-3" />
-                <span className="text-[15px] font-medium text-[var(--tg-hint-color)]">Thinking...</span>
+                <Loader2 size={16} className="animate-spin text-[var(--tg-link-color)] mr-3 animate-pulse" />
+                <span className="text-[15px] font-medium text-[var(--tg-hint-color)] animate-pulse">Thinking...</span>
               </div>
             </div>
           )}
@@ -1236,6 +1309,18 @@ const ChatArea = ({ onOpenModelInfo }) => {
             >
               <RotateCcw size={18} className="text-[var(--tg-hint-color)] group-hover:text-[var(--tg-link-color)] transition-colors" />
               <span className="flex-grow text-left">Regenerate</span>
+            </button>
+          )}
+
+          {contextMenu.msg.sender === 'bot' && (contextMenu.msg.stats?.reasoning || contextMenu.msg.stats?.monologue) && (
+            <button
+              onClick={() => { toggleThought(contextMenu.msg.id); setContextMenu(null); }}
+              className="flex items-center gap-3 px-3 py-1.5 hover:bg-[var(--tg-secondary-bg-color)] text-[var(--tg-text-color)] transition-colors text-[14px] group"
+            >
+              <Smile size={18} className="text-[var(--tg-hint-color)] group-hover:text-[var(--tg-link-color)] transition-colors" />
+              <span className="flex-grow text-left">
+                {expandedThoughts.has(contextMenu.msg.id) ? 'Hide Thoughts' : 'View Thoughts'}
+              </span>
             </button>
           )}
 

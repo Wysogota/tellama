@@ -215,6 +215,8 @@ router.post('/proxy/:provider/chat/completions', async (req, res) => {
       temperature: req.body.temperature ?? ACTIVE_PARAMS.temperature,
       top_p: req.body.top_p ?? ACTIVE_PARAMS.top_p,
       max_tokens: req.body.max_tokens ?? ACTIVE_PARAMS.max_tokens,
+      ...(req.body.tools ? { tools: req.body.tools } : {}),
+      ...(req.body.tool_choice ? { tool_choice: req.body.tool_choice } : {}),
       ...(baseProvider === 'llamacpp' ? {
         top_k: req.body.top_k ?? ACTIVE_PARAMS.top_k,
         repeat_penalty: req.body.repeat_penalty ?? ACTIVE_PARAMS.repeat_penalty,
@@ -271,11 +273,67 @@ router.post('/proxy/:provider/chat/completions', async (req, res) => {
       res.flushHeaders();
 
       const nodeStream = Readable.fromWeb(upstream.body);
-      nodeStream.pipe(res);
+      const sseDecoder = new TextDecoder('utf-8');
+
+      // Patch SSE stream: Mistral omits `type: "function"` on tool_call deltas,
+      // causing Letta's Pydantic ChatCompletionResponse validation to fail.
+      // We intercept each chunk and inject the missing field before forwarding.
+      nodeStream.on('data', (chunk) => {
+        if (res.writableEnded) return;
+        const text = typeof chunk === 'string' ? chunk : sseDecoder.decode(chunk, { stream: true });
+        const patched = text.replace(/data: (\{.+\})/g, (_, jsonStr) => {
+          try {
+            const obj = JSON.parse(jsonStr);
+            let modified = false;
+            if (Array.isArray(obj?.choices)) {
+              for (const choice of obj.choices) {
+                const tcs = choice?.delta?.tool_calls ?? choice?.message?.tool_calls;
+                if (Array.isArray(tcs)) {
+                  for (const tc of tcs) {
+                    if (tc && (tc.type == null || tc.type === '')) {
+                      tc.type = 'function';
+                      modified = true;
+                    }
+                  }
+                }
+              }
+            }
+            return `data: ${modified ? JSON.stringify(obj) : jsonStr}`;
+          } catch {
+            return `data: ${jsonStr}`;
+          }
+        });
+        res.write(patched);
+      });
+      nodeStream.on('end', () => { if (!res.writableEnded) res.end(); });
       nodeStream.on('error', () => { if (!res.writableEnded) res.end(); });
     } else {
-      // Non-streaming: forward JSON body as-is
+      // Non-streaming: patch missing `type: "function"` on tool_calls before forwarding.
+      // Mistral omits this field which breaks Letta's Pydantic ChatCompletionResponse validation.
       const json = await upstream.json();
+      if (Array.isArray(json?.choices)) {
+        for (const choice of json.choices) {
+          const tcs = choice?.message?.tool_calls;
+          if (Array.isArray(tcs)) {
+            for (const tc of tcs) {
+              if (tc && (tc.type == null || tc.type === '')) {
+                tc.type = 'function';
+              }
+            }
+          }
+        }
+      }
+      
+      notifyClients({
+        type: 'letta_response',
+        data: {
+          provider: baseProvider,
+          intent: intent,
+          status: upstream.status,
+          body: json
+        }
+      });
+
       res.json(json);
     }
 
@@ -532,6 +590,66 @@ router.get('/icon', async (req, res) => {
     res.send(Buffer.from(buffer));
   } catch (e) {
     res.status(500).end();
+  }
+});
+
+// ── Embeddings Proxy ────────────────────────────────────────────────────────
+
+router.post('/proxy/:provider/embeddings', async (req, res) => {
+  const provider = req.params.provider;
+  const { input, model } = req.body;
+
+  let baseProvider = provider.replace(/^memory_/, '');
+  let realModel = model;
+
+  if (baseProvider === 'dynamic') {
+    baseProvider = ACTIVE_PROVIDER.replace(/^memory_/, '');
+    // For embeddings, we should NOT override with ACTIVE_MODEL
+    // because ACTIVE_MODEL is the chat model (e.g. gemma-4-31b-it)
+    // We must use the specific embedding model requested by Letta
+    realModel = model;
+  }
+
+  const config = PROVIDER_CONFIGS[baseProvider];
+  if (!config) {
+    return res.status(400).json({ error: `Unknown provider "${baseProvider}"` });
+  }
+
+  let apiKey = '';
+  if (baseProvider !== 'llamacpp') {
+    try {
+      const row = db.prepare('SELECT key_value FROM api_keys WHERE provider = ?').get(baseProvider);
+      if (!row) return res.status(401).json({ error: `API key for ${baseProvider} is not configured.` });
+      apiKey = row.key_value;
+    } catch (e) {
+      return res.status(500).json({ error: 'Database error reading API key' });
+    }
+  }
+
+  const endpoint = `${config.baseUrl}/embeddings`;
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(config.extraHeaders || {}),
+  };
+  if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ model: realModel, input }),
+    });
+    
+    if (!response.ok) {
+      const errText = await response.text();
+      return res.status(response.status).json({ error: errText });
+    }
+    
+    const data = await response.json();
+    return res.json(data);
+  } catch (error) {
+    console.error(`[LLM Proxy] Embedding error for ${baseProvider}:`, error);
+    return res.status(500).json({ error: error.message });
   }
 });
 
