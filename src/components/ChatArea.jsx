@@ -97,13 +97,13 @@ const ChatArea = ({ onOpenModelInfo }) => {
       .filter(n => n.parentId === null)
       .sort((a, b) => a.timestamp - b.timestamp)
       .map(n => n.id);
-      
+
     if (rootSiblings.length === 0) return [];
 
     const path = [];
     const activeRootIdx = chatData.activeChildIndex[null] || 0;
     let curr = rootSiblings[activeRootIdx];
-    
+
     while (curr && chatData.nodes[curr]) {
       const node = chatData.nodes[curr];
       path.push(node);
@@ -255,7 +255,7 @@ const ChatArea = ({ onOpenModelInfo }) => {
           setStreamingText(botResponseText);
         }
         scrollToBottom();
-      }, false, signal, isRegeneration, activeChatId, parentNodeId);
+      }, false, signal, activeChatId, parentNodeId);
       stats = result.stats;
       returnedUserMessageId = result.userMessageId;
       returnedAssistantMessageId = result.assistantMessageId;
@@ -437,7 +437,7 @@ const ChatArea = ({ onOpenModelInfo }) => {
   const handleSwitchBranch = async (parentId, newIndex) => {
     // 1. Identify the currently active User and Bot messages
     const activeUserIdx = chatData.activeChildIndex[parentId] ?? 0;
-    
+
     // We only need to patch if the branch is actually changing
     if (activeUserIdx === newIndex) {
       switchBranch(activeChatId, parentId, newIndex);
@@ -459,7 +459,7 @@ const ChatArea = ({ onOpenModelInfo }) => {
     }
 
     const activeUserNode = chatData.nodes[activeUserId];
-    
+
     const activeBotIdx = chatData.activeChildIndex[activeUserId] ?? 0;
     const activeBotId = activeUserNode?.childrenIds?.[activeBotIdx];
     const activeBotNode = activeBotId ? chatData.nodes[activeBotId] : null;
@@ -471,10 +471,10 @@ const ChatArea = ({ onOpenModelInfo }) => {
 
     const aliveLettaUserId = activeUserNode.metadata.letta_id;
     const aliveLettaBotId = activeBotNode.metadata.letta_id;
-    
+
     // 2. Identify the target User and Bot messages we are switching to
     const newUserNode = chatData.nodes[newUserId];
-    
+
     const newBotIdx = chatData.activeChildIndex[newUserId] ?? 0;
     const newBotId = newUserNode?.childrenIds?.[newBotIdx];
     const newBotNode = newBotId ? chatData.nodes[newBotId] : null;
@@ -492,11 +492,11 @@ const ChatArea = ({ onOpenModelInfo }) => {
       try {
         await updateMessageInLetta(aliveLettaUserId, newUserNode.content, activeUser, 'user');
         await updateMessageInLetta(aliveLettaBotId, newBotNode.content, activeUser, 'assistant');
-        
+
         // 5. Update local metadata so the new active branch owns the alive Letta IDs
         await updateMessageMetadata(activeChatId, newUserId, { letta_id: aliveLettaUserId });
         await updateMessageMetadata(activeChatId, newBotId, { letta_id: aliveLettaBotId });
-        
+
       } catch (e) {
         console.warn('Failed to restore branch state in Letta:', e);
       }
@@ -1085,21 +1085,6 @@ const ChatArea = ({ onOpenModelInfo }) => {
             );
           })}
 
-          {/* Detailed Thinking / Monologue State */}
-          {/* {displayIsGenerating && streamingThoughts && (
-            <div className="flex flex-col items-start gap-1 p-1 max-w-[80%] mb-1.5">
-              <div className="rounded-[18px] px-4 py-2.5 shadow-sm bg-[var(--tg-secondary-bg-color)]/60 text-[var(--tg-text-color)] rounded-bl-[4px] flex flex-col border border-[var(--tg-border-color)]/40 backdrop-blur-md animate-in fade-in duration-300">
-                <div className="flex items-center mb-1 text-[var(--tg-hint-color)]">
-                  <Loader2 size={12} className="animate-spin text-emerald-500 mr-2 flex-shrink-0" />
-                  <span className="text-[11px] font-bold uppercase tracking-wider opacity-90">Thought Process</span>
-                </div>
-                <div className="text-[13px] italic whitespace-pre-wrap break-words opacity-80 leading-relaxed font-sans pr-4">
-                  {streamingThoughts}
-                </div>
-              </div>
-            </div>
-          )} */}
-
           {/* Initial Loading Spinner (Before thoughts or text starts) */}
           {displayIsGenerating && !streamingThoughts && !displayStreamingText && (
             <div className="flex justify-start p-1">
@@ -1110,21 +1095,33 @@ const ChatArea = ({ onOpenModelInfo }) => {
             </div>
           )}
 
-          {/* Streaming Text State - Restored with paragraphs */}
-          {displayIsGenerating && displayStreamingText && (
+          {/* Detailed Thinking / Monologue State & Streaming Text State */}
+          {displayIsGenerating && (streamingThoughts || displayStreamingText) && (
             <div className="flex flex-col gap-1 max-w-[80%] items-start self-start group p-1">
-              {displayStreamingText.split(/\n\s*\n/).map((paragraph, pIdx, arr) => (
-                <div
-                  key={pIdx}
-                  className={`rounded-[18px] px-3 py-1.5 shadow-sm text-[15px] bg-[var(--tg-chat-bubble-in)] text-[var(--tg-chat-bubble-in-text)] relative whitespace-pre-wrap break-words tg-bubble-in ${pIdx === arr.length - 1 ? 'rounded-bl-[4px] tg-bubble-in-tail' : ''
-                    }`}
-                >
-                  {paragraph}
-                  {pIdx === arr.length - 1 && (
-                    <span className="inline-block w-1.5 h-4 bg-[var(--tg-link-color)] ml-1 animate-pulse align-middle" />
-                  )}
+              <div
+                style={{ minWidth: '150px' }}
+                className={`flex flex-col shadow-sm text-[15px] relative transition-all duration-300 bg-[var(--tg-chat-bubble-in)] text-[var(--tg-chat-bubble-in-text)] tg-bubble-in rounded-[18px] tg-bubble-in-tail select-none`}
+              >
+                {/* Render Thoughts only in the first bubble */}
+                {streamingThoughts && (
+                  <div
+                    style={{
+                      backgroundColor: 'color-mix(in srgb, var(--tg-link-color) 10%, transparent)',
+                      borderColor: 'color-mix(in srgb, var(--tg-link-color) 20%, transparent)',
+                      color: 'color-mix(in srgb, var(--tg-text-color) 80%, transparent)'
+                    }}
+                    className="relative mx-2 mt-2 mb-1 p-2 rounded-[10px] text-[11px] font-mono tracking-tight whitespace-pre-wrap leading-tight border"
+                  >
+                    {streamingThoughts}
+                  </div>
+                )}
+                {/* Thinking indicator: shown inside last bubble while no response text yet */}
+                <div className="px-4 py-2.5 flex items-center">
+                  <Loader2 size={16} className="animate-spin text-[var(--tg-link-color)] mr-3 animate-pulse" />
+                  <span className="text-[15px] font-medium text-[var(--tg-hint-color)] animate-pulse">Thinking...</span>
                 </div>
-              ))}
+
+              </div>
             </div>
           )}
 

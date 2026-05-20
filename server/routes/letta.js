@@ -154,7 +154,6 @@ router.use(async (req, res) => {
         if (clientDisconnected && assistantContent) {
           persistAssistantMessage(sessionId, parentMessageId, assistantContent, assistantMessageId, internalMonologue);
         }
-        console.log('[DEBUG Letta Proxy] internalMonologue:', internalMonologue);
         notifyClients({ type: 'stream_end', sessionId });
       });
 
